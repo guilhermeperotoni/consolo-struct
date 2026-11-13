@@ -95,12 +95,17 @@ pub struct Offer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Selection {
     /// Nenhuma versão estável mais nova. `latest` é a maior estável publicada, se houver.
-    UpToDate { latest: Option<Version> },
+    UpToDate {
+        latest: Option<Version>,
+    },
     Available(Offer),
     /// Existe versão estável mais nova, mas nenhuma com pacote para este alvo.
-    Incompatible { newest: Version },
+    Incompatible {
+        newest: Version,
+    },
 }
 
 pub fn decode_key(b64: &str) -> Result<VerifyingKey, CatalogError> {
@@ -121,7 +126,8 @@ fn verify(message: &[u8], signature_b64: &str, key: &VerifyingKey) -> bool {
     let Ok(raw) = <[u8; 64]>::try_from(bytes.as_slice()) else {
         return false;
     };
-    key.verify_strict(message, &Signature::from_bytes(&raw)).is_ok()
+    key.verify_strict(message, &Signature::from_bytes(&raw))
+        .is_ok()
 }
 
 /// Mensagem assinada de cada pacote (`packageMessage` do catálogo).
@@ -180,7 +186,10 @@ fn stable_version(release: &Release) -> Result<Version, String> {
 }
 
 fn is_hex_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Valida um pacote já filtrado para o alvo e devolve o nome do arquivo.
@@ -271,7 +280,7 @@ pub fn select(
         let Ok(version) = stable_version(&release) else {
             continue;
         };
-        if latest.as_ref().map_or(true, |l| &version > l) {
+        if latest.as_ref().is_none_or(|l| &version > l) {
             latest = Some(version.clone());
         }
         if &version > current {
@@ -292,7 +301,9 @@ pub fn select(
             .assets
             .iter()
             .filter_map(|a| serde_json::from_value::<Asset>(a.clone()).ok())
-            .filter(|a| a.platform == target.platform && a.arch == target.arch && a.kind == target.kind)
+            .filter(|a| {
+                a.platform == target.platform && a.arch == target.arch && a.kind == target.kind
+            })
             .collect();
         if candidates.is_empty() {
             continue;
@@ -339,8 +350,16 @@ mod tests {
     use serde_json::json;
 
     const PREFIX: &str = "https://github.com/ricardocorsini/consolo-struct/releases/download/";
-    const WIN: Target = Target { platform: "windows", arch: "x86_64", kind: "nsis" };
-    const LINUX: Target = Target { platform: "linux", arch: "x86_64", kind: "appimage" };
+    const WIN: Target = Target {
+        platform: "windows",
+        arch: "x86_64",
+        kind: "nsis",
+    };
+    const LINUX: Target = Target {
+        platform: "linux",
+        arch: "x86_64",
+        kind: "appimage",
+    };
 
     fn signer(seed: u8) -> SigningKey {
         SigningKey::from_bytes(&[seed; 32])
@@ -376,9 +395,17 @@ mod tests {
     }
     fn asset(k: &SigningKey, version: &str, platform: &str) -> Value {
         let (kind, name, exe) = if platform == "windows" {
-            ("nsis", format!("consolostruct-{version}-windows-x86_64.exe"), Some("consolostruct.exe"))
+            (
+                "nsis",
+                format!("consolostruct-{version}-windows-x86_64.exe"),
+                Some("consolostruct.exe"),
+            )
         } else {
-            ("appimage", format!("consolostruct-{version}-linux-x86_64.AppImage"), None)
+            (
+                "appimage",
+                format!("consolostruct-{version}-linux-x86_64.AppImage"),
+                None,
+            )
         };
         let mut a = Asset {
             platform: platform.into(),
@@ -392,7 +419,8 @@ mod tests {
             executable: exe.map(String::from),
         };
         a.signature = STANDARD.encode(
-            k.sign(package_message("consolostruct", version, &a).as_bytes()).to_bytes(),
+            k.sign(package_message("consolostruct", version, &a).as_bytes())
+                .to_bytes(),
         );
         json!({
             "platform": a.platform, "arch": a.arch, "kind": a.kind, "url": a.url,
@@ -458,11 +486,16 @@ mod tests {
     #[test]
     fn same_or_newer_running_version_is_never_offered_a_downgrade() {
         let k = keys();
-        let p = payload(vec![release(&k.package, "0.7.0"), release(&k.package, "0.7.1")]);
+        let p = payload(vec![
+            release(&k.package, "0.7.0"),
+            release(&k.package, "0.7.1"),
+        ]);
         for current in ["0.7.1", "0.8.0", "0.7.2-beta.1"] {
             assert_eq!(
                 select(&p, &trust(&k), &v(current), WIN).unwrap(),
-                Selection::UpToDate { latest: Some(v("0.7.1")) },
+                Selection::UpToDate {
+                    latest: Some(v("0.7.1"))
+                },
                 "{current}"
             );
         }
@@ -471,7 +504,10 @@ mod tests {
     #[test]
     fn semver_comparison_is_numeric_and_prerelease_aware() {
         let k = keys();
-        let p = payload(vec![release(&k.package, "0.10.0"), release(&k.package, "0.9.9")]);
+        let p = payload(vec![
+            release(&k.package, "0.10.0"),
+            release(&k.package, "0.9.9"),
+        ]);
         let Selection::Available(offer) = select(&p, &trust(&k), &v("0.9.10"), WIN).unwrap() else {
             panic!()
         };
@@ -494,7 +530,10 @@ mod tests {
             Selection::UpToDate { latest: None }
         );
         let missing = json!({ "schemaVersion": 1, "apps": [] });
-        assert_eq!(select(&missing, &trust(&k), &v("0.7.1"), WIN), Err(CatalogError::NotListed));
+        assert_eq!(
+            select(&missing, &trust(&k), &v("0.7.1"), WIN),
+            Err(CatalogError::NotListed)
+        );
     }
 
     #[test]
@@ -502,7 +541,10 @@ mod tests {
         let k = keys();
         let p = payload(vec![release(&k.package, "0.9.0")]);
         let forged = seal(&signer(7), &p);
-        assert!(matches!(open_envelope(&forged, &trust(&k)), Err(CatalogError::Signature(_))));
+        assert!(matches!(
+            open_envelope(&forged, &trust(&k)),
+            Err(CatalogError::Signature(_))
+        ));
         let mut wrong_id: Value = serde_json::from_slice(&seal(&k.catalog, &p)).unwrap();
         wrong_id["keyId"] = json!("launcher-packages-v1");
         assert!(matches!(
@@ -510,7 +552,10 @@ mod tests {
             Err(CatalogError::Signature(_))
         ));
         let mut tampered: Value = serde_json::from_slice(&seal(&k.catalog, &p)).unwrap();
-        tampered["payload"] = json!(tampered["payload"].as_str().unwrap().replace("0.9.0", "0.9.1"));
+        tampered["payload"] = json!(tampered["payload"]
+            .as_str()
+            .unwrap()
+            .replace("0.9.0", "0.9.1"));
         assert!(matches!(
             open_envelope(tampered.to_string().as_bytes(), &trust(&k)),
             Err(CatalogError::Signature(_))
@@ -531,13 +576,18 @@ mod tests {
         // Pacote assinado pela chave de outro produto.
         let p = payload(vec![release(&signer(5), "0.9.0")]);
         let result = select(&p, &trust(&k), &v("0.7.1"), WIN);
-        assert!(matches!(result, Err(CatalogError::InvalidPackage { ref version, .. }) if version == "0.9.0"));
+        assert!(
+            matches!(result, Err(CatalogError::InvalidPackage { ref version, .. }) if version == "0.9.0")
+        );
     }
 
     #[test]
     fn a_rejected_newest_version_does_not_silently_fall_back_to_an_older_one() {
         let k = keys();
-        let p = payload(vec![release(&signer(5), "0.9.0"), release(&k.package, "0.8.0")]);
+        let p = payload(vec![
+            release(&signer(5), "0.9.0"),
+            release(&k.package, "0.8.0"),
+        ]);
         assert!(matches!(
             select(&p, &trust(&k), &v("0.7.1"), WIN),
             Err(CatalogError::InvalidPackage { .. })
@@ -551,8 +601,13 @@ mod tests {
             ("size", json!(999)),
             ("sha256", json!("cd".repeat(32))),
             ("executable", json!("outro.exe")),
-            ("url", json!(format!("https://example.com/v0.9.0/x.exe"))),
-            ("url", json!(format!("{PREFIX}v0.8.0/consolostruct-0.9.0-windows-x86_64.exe"))),
+            ("url", json!("https://example.com/v0.9.0/x.exe")),
+            (
+                "url",
+                json!(format!(
+                    "{PREFIX}v0.8.0/consolostruct-0.9.0-windows-x86_64.exe"
+                )),
+            ),
             ("url", json!(format!("{PREFIX}v0.9.0/../x.exe"))),
             ("keyId", json!("launcher-packages-v1")),
             ("sha256", json!("AB".repeat(32))),
@@ -563,7 +618,10 @@ mod tests {
             r["assets"][0][field] = value.clone();
             let p = payload(vec![r]);
             assert!(
-                matches!(select(&p, &trust(&k), &v("0.7.1"), WIN), Err(CatalogError::InvalidPackage { .. })),
+                matches!(
+                    select(&p, &trust(&k), &v("0.7.1"), WIN),
+                    Err(CatalogError::InvalidPackage { .. })
+                ),
                 "{field} = {value}"
             );
         }
@@ -573,20 +631,37 @@ mod tests {
     fn incompatible_platform_or_arch_is_reported() {
         let k = keys();
         let p = payload(vec![release(&k.package, "0.9.0")]);
-        let arm = Target { platform: "linux", arch: "aarch64", kind: "appimage" };
+        let arm = Target {
+            platform: "linux",
+            arch: "aarch64",
+            kind: "appimage",
+        };
         assert_eq!(
             select(&p, &trust(&k), &v("0.7.1"), arm).unwrap(),
             Selection::Incompatible { newest: v("0.9.0") }
         );
-        let deb = Target { platform: "linux", arch: "x86_64", kind: "deb" };
-        assert!(matches!(select(&p, &trust(&k), &v("0.7.1"), deb).unwrap(), Selection::Incompatible { .. }));
+        let deb = Target {
+            platform: "linux",
+            arch: "x86_64",
+            kind: "deb",
+        };
+        assert!(matches!(
+            select(&p, &trust(&k), &v("0.7.1"), deb).unwrap(),
+            Selection::Incompatible { .. }
+        ));
     }
 
     #[test]
     fn duplicated_versions_or_packages_are_refused() {
         let k = keys();
-        let p = payload(vec![release(&k.package, "0.9.0"), release(&k.package, "0.9.0")]);
-        assert!(matches!(select(&p, &trust(&k), &v("0.7.1"), WIN), Err(CatalogError::Malformed(_))));
+        let p = payload(vec![
+            release(&k.package, "0.9.0"),
+            release(&k.package, "0.9.0"),
+        ]);
+        assert!(matches!(
+            select(&p, &trust(&k), &v("0.7.1"), WIN),
+            Err(CatalogError::Malformed(_))
+        ));
         let mut r = release(&k.package, "0.9.0");
         let copy = r["assets"][0].clone();
         r["assets"].as_array_mut().unwrap().push(copy);
@@ -621,13 +696,16 @@ mod tests {
         };
         assert_eq!(offer.version, v("0.7.1"));
         assert_eq!(offer.file_name, "consolostruct-0.7.1-windows-x86_64.exe");
-        let Selection::Available(linux) = select(&opened, &trust, &v("0.6.0"), LINUX).unwrap() else {
+        let Selection::Available(linux) = select(&opened, &trust, &v("0.6.0"), LINUX).unwrap()
+        else {
             panic!()
         };
         assert_eq!(linux.version, v("0.7.1"));
         assert_eq!(
             select(&opened, &trust, &v("0.7.1"), WIN).unwrap(),
-            Selection::UpToDate { latest: Some(v("0.7.1")) }
+            Selection::UpToDate {
+                latest: Some(v("0.7.1"))
+            }
         );
     }
 }

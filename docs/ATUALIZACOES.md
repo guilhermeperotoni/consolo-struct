@@ -92,10 +92,21 @@ foi aberta (instalador cancelado ou atalho apontando para outra cópia).
   duplicadas, detecção Launcher/NSIS/AppImage/pacote/avulso, hosts e redirecionamentos HTTPS,
   download interrompido, timeout, hash divergente, cancelamento, disco cheio, permissão e trava
   contra instaladores concorrentes.
+- `cargo test --manifest-path src-tauri/Cargo.toml -- --ignored` (manual, exige internet):
+  consulta o catálogo oficial como 0.7.0, baixa o pacote real oferecido pelos redirecionamentos
+  do GitHub e confere tamanho e SHA-256, sem instalar.
 - `tests/updates.test.ts`: transições, cliques repetidos, adiamento, rótulos de erro e
   conferência pós-reinício.
 - `tests/e2e/updates.spec.ts`: interface com a ponte Tauri simulada (oferta, Agora não, download
   único, proteção antes de reiniciar, falha de integridade, offline, Launcher e web).
+
+### Validação nativa executada (Windows 11 x64, 13/11/2026)
+
+- Executável de produção (`tauri build --no-bundle`) configurado como 0.7.0 e aberto direto,
+  sem o Launcher: consultou o catálogo oficial, ofereceu a 0.7.1 (NSIS x86_64, 5,0 MB, notas da
+  release) e identificou o executável avulso, sem oferecer instalação.
+- Teste online acima aprovado no mesmo ambiente.
+- Não executado: instalação NSIS com reinício, AppImage no Linux e instalação do Launcher.
 
 Testes web e simulados não comprovam a atualização nativa. Antes de publicar uma versão com
 este recurso, valide em cada sistema com um pacote anterior instalado e uma versão mais nova no

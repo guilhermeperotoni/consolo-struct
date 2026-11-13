@@ -61,7 +61,11 @@ pub struct UpdateError {
 }
 
 fn error(kind: &str, message: impl Into<String>) -> UpdateError {
-    UpdateError { kind: kind.into(), message: message.into(), version: None }
+    UpdateError {
+        kind: kind.into(),
+        message: message.into(),
+        version: None,
+    }
 }
 
 impl From<NetError> for UpdateError {
@@ -143,10 +147,15 @@ struct Progress {
     total: u64,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Job {
     Idle,
     Downloading,
-    Ready { offer: Offer, path: PathBuf, mode: InstallMode },
+    Ready {
+        offer: Offer,
+        path: PathBuf,
+        mode: InstallMode,
+    },
     Applying,
 }
 
@@ -169,17 +178,17 @@ impl Default for Updater {
 }
 
 fn target() -> Target<'static> {
-    let platform = match std::env::consts::OS {
-        "windows" => "windows",
-        "linux" => "linux",
-        other => other,
-    };
+    let platform = std::env::consts::OS;
     let kind = match platform {
         "windows" => "nsis",
         "linux" => "appimage",
         _ => "unsupported",
     };
-    Target { platform, arch: std::env::consts::ARCH, kind }
+    Target {
+        platform,
+        arch: std::env::consts::ARCH,
+        kind,
+    }
 }
 
 fn current_version(app: &AppHandle) -> Result<Version, UpdateError> {
@@ -201,12 +210,19 @@ fn install_mode() -> InstallMode {
 }
 
 fn client(app: &AppHandle) -> Client {
-    Client::new(&format!("ConsoloStruct/{} (update-check)", app.package_info().version))
+    Client::new(&format!(
+        "ConsoloStruct/{} (update-check)",
+        app.package_info().version
+    ))
 }
 
 /// Consulta o catálogo e escolhe a oferta. Bloqueante: chamar fora da thread da interface.
 fn resolve(app: &AppHandle, current: &Version) -> Result<Selection, UpdateError> {
-    let bytes = client(app).fetch_small(CATALOG_URL, CATALOG_HOSTS, CHECK_TIMEOUT)?;
+    resolve_with(&client(app), current)
+}
+
+fn resolve_with(client: &Client, current: &Version) -> Result<Selection, UpdateError> {
+    let bytes = client.fetch_small(CATALOG_URL, CATALOG_HOSTS, CHECK_TIMEOUT)?;
     let trust = official_trust();
     let payload = catalog::open_envelope(&bytes, &trust)?;
     Ok(catalog::select(&payload, &trust, current, target())?)
@@ -280,7 +296,10 @@ pub async fn update_check(
     {
         let mut checking = state.checking.lock().unwrap_or_else(|e| e.into_inner());
         if *checking {
-            return Err(error("busy", "Uma consulta de atualização já está em andamento."));
+            return Err(error(
+                "busy",
+                "Uma consulta de atualização já está em andamento.",
+            ));
         }
         *checking = true;
     }
@@ -320,7 +339,11 @@ impl ProcessLock {
         if stale {
             let _ = std::fs::remove_file(&path);
         }
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(_) => Ok(Self(path)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(error(
                 "busy",
@@ -507,7 +530,10 @@ fn apply(offer: &Offer, path: &Path, mode: &InstallMode) -> Result<(), UpdateErr
     match mode {
         InstallMode::WindowsNsis { dir } => launch_nsis(path, dir),
         InstallMode::LinuxAppImage { path: image } => replace_appimage(path, image),
-        _ => Err(error("unsupported", "Este formato de instalação não se atualiza pelo aplicativo.")),
+        _ => Err(error(
+            "unsupported",
+            "Este formato de instalação não se atualiza pelo aplicativo.",
+        )),
     }
 }
 
@@ -533,7 +559,10 @@ fn launch_nsis(installer: &Path, dir: &Path) -> Result<(), UpdateError> {
 
 #[cfg(not(windows))]
 fn launch_nsis(_: &Path, _: &Path) -> Result<(), UpdateError> {
-    Err(error("unsupported", "Instalador do Windows indisponível neste sistema."))
+    Err(error(
+        "unsupported",
+        "Instalador do Windows indisponível neste sistema.",
+    ))
 }
 
 #[cfg(unix)]
@@ -574,8 +603,12 @@ fn replace_appimage(_: &Path, _: &Path) -> Result<(), UpdateError> {
 /// Abre o Struct Launcher (caminho fixo detectado) para atualizar instalações gerenciadas.
 #[tauri::command(async)]
 pub fn update_open_launcher() -> Result<(), UpdateError> {
-    let launcher = install::launcher_executable()
-        .ok_or_else(|| error("unsupported", "Struct Launcher não encontrado neste computador."))?;
+    let launcher = install::launcher_executable().ok_or_else(|| {
+        error(
+            "unsupported",
+            "Struct Launcher não encontrado neste computador.",
+        )
+    })?;
     std::process::Command::new(launcher)
         .spawn()
         .map(|_| ())
@@ -586,15 +619,68 @@ pub fn update_open_launcher() -> Result<(), UpdateError> {
 mod tests {
     use super::*;
 
+    /// Fluxo real contra o catálogo e as releases publicadas, sem instalar nada.
+    /// Executar com  (exige internet).
+    #[test]
+    #[ignore = "acessa a rede"]
+    fn online_official_offer_downloads_and_verifies_without_installing() {
+        let client = Client::new("ConsoloStruct-test (update-check)");
+        let current = Version::parse("0.7.0").unwrap();
+        let Selection::Available(offer) = resolve_with(&client, &current).unwrap() else {
+            panic!("o catálogo oficial deveria oferecer uma versão mais nova que 0.7.0")
+        };
+        assert!(offer.version > current);
+        let t = target();
+        assert_eq!(
+            (offer.asset.platform.as_str(), offer.asset.kind.as_str()),
+            (t.platform, t.kind)
+        );
+        let dest = std::env::temp_dir().join(format!("consolostruct-online-{}", offer.file_name));
+        let mut steps = 0;
+        client
+            .download(
+                &offer.asset.url,
+                DOWNLOAD_HOSTS,
+                &dest,
+                offer.asset.size,
+                &offer.asset.sha256,
+                &AtomicBool::new(false),
+                &mut |_: u64, _: u64| steps += 1,
+            )
+            .unwrap();
+        assert_eq!(
+            net::file_sha256(&dest).unwrap(),
+            (offer.asset.size, offer.asset.sha256.clone())
+        );
+        assert!(steps >= 2);
+        let _ = std::fs::remove_file(dest);
+        // A versão atual publicada não recebe oferta (sem downgrade).
+        let latest = Version::parse("999.0.0").unwrap();
+        assert!(matches!(
+            resolve_with(&client, &latest).unwrap(),
+            Selection::UpToDate { .. }
+        ));
+    }
+
     #[test]
     fn errors_keep_a_stable_kind_for_the_interface() {
         assert_eq!(UpdateError::from(NetError::Timeout).kind, "timeout");
-        assert_eq!(UpdateError::from(NetError::Offline("dns".into())).kind, "offline");
+        assert_eq!(
+            UpdateError::from(NetError::Offline("dns".into())).kind,
+            "offline"
+        );
         assert_eq!(UpdateError::from(NetError::Space).kind, "space");
         assert_eq!(UpdateError::from(CatalogError::NotListed).kind, "notListed");
-        assert_eq!(UpdateError::from(CatalogError::Signature("x".into())).kind, "signature");
         assert_eq!(
-            UpdateError::from(CatalogError::InvalidPackage { version: "1.0.0".into(), reason: "x".into() }).kind,
+            UpdateError::from(CatalogError::Signature("x".into())).kind,
+            "signature"
+        );
+        assert_eq!(
+            UpdateError::from(CatalogError::InvalidPackage {
+                version: "1.0.0".into(),
+                reason: "x".into()
+            })
+            .kind,
             "package"
         );
     }
@@ -626,7 +712,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn appimage_replacement_keeps_the_original_when_staging_is_missing() {
-        let dir = std::env::temp_dir().join(format!("consolostruct-appimage-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("consolostruct-appimage-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let image = dir.join("ConsoloStruct.AppImage");
         std::fs::write(&image, b"versao antiga").unwrap();

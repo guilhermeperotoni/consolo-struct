@@ -48,9 +48,7 @@ pub fn io_error(error: io::Error) -> NetError {
     let full = if cfg!(windows) { [112, 39] } else { [28, 28] };
     match error.kind() {
         _ if error.raw_os_error().is_some_and(|c| full.contains(&c)) => NetError::Space,
-        io::ErrorKind::PermissionDenied => {
-            NetError::Permission(error.to_string())
-        }
+        io::ErrorKind::PermissionDenied => NetError::Permission(error.to_string()),
         io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => NetError::Timeout,
         _ => NetError::Io(error.to_string()),
     }
@@ -142,6 +140,7 @@ impl Client {
     }
 
     /// Baixa para `dest`, conferindo tamanho e SHA-256 durante o fluxo.
+    #[allow(clippy::too_many_arguments)]
     pub fn download(
         &self,
         url: &str,
@@ -173,7 +172,10 @@ fn transport_error(transport: &ureq::Transport) -> NetError {
         std::error::Error::source(transport);
     while let Some(error) = source {
         if let Some(io) = error.downcast_ref::<io::Error>() {
-            if matches!(io.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) {
+            if matches!(
+                io.kind(),
+                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+            ) {
                 return NetError::Timeout;
             }
         }
@@ -272,7 +274,10 @@ mod tests {
             "https://release-assets.githubusercontent.com/x",
             "https://github.com:443/x",
         ] {
-            assert!(check_url(&Url::parse(ok).unwrap(), &allowed).is_ok(), "{ok}");
+            assert!(
+                check_url(&Url::parse(ok).unwrap(), &allowed).is_ok(),
+                "{ok}"
+            );
         }
         for bad in [
             "http://github.com/x",
@@ -282,7 +287,10 @@ mod tests {
             "https://github.com:8443/x",
             "file:///etc/passwd",
         ] {
-            assert!(check_url(&Url::parse(bad).unwrap(), &allowed).is_err(), "{bad}");
+            assert!(
+                check_url(&Url::parse(bad).unwrap(), &allowed).is_err(),
+                "{bad}"
+            );
         }
     }
 
@@ -291,8 +299,15 @@ mod tests {
         let data = b"conteudo do instalador".repeat(5000);
         let path = temp("ok");
         let mut calls = 0;
-        write_verified(&data[..], &path, data.len() as u64, &sha(&data), &AtomicBool::new(false), &mut |_: u64, _: u64| calls += 1)
-            .unwrap();
+        write_verified(
+            &data[..],
+            &path,
+            data.len() as u64,
+            &sha(&data),
+            &AtomicBool::new(false),
+            &mut |_: u64, _: u64| calls += 1,
+        )
+        .unwrap();
         assert_eq!(file_sha256(&path).unwrap(), (data.len() as u64, sha(&data)));
         assert!(calls >= 2);
         let _ = std::fs::remove_file(path);
@@ -318,7 +333,14 @@ mod tests {
             Err(NetError::Integrity(_))
         ));
         assert_eq!(
-            write_verified(&data[..], &path, 6, &sha(&data), &AtomicBool::new(true), &mut noop),
+            write_verified(
+                &data[..],
+                &path,
+                6,
+                &sha(&data),
+                &AtomicBool::new(true),
+                &mut noop
+            ),
             Err(NetError::Cancelled)
         );
         let _ = std::fs::remove_file(path);
@@ -334,7 +356,14 @@ mod tests {
         }
         let path = temp("timeout");
         assert_eq!(
-            write_verified(Broken, &path, 6, &"0".repeat(64), &AtomicBool::new(false), &mut |_: u64, _: u64| {}),
+            write_verified(
+                Broken,
+                &path,
+                6,
+                &"0".repeat(64),
+                &AtomicBool::new(false),
+                &mut |_: u64, _: u64| {}
+            ),
             Err(NetError::Timeout)
         );
         let _ = std::fs::remove_file(path);
@@ -343,14 +372,24 @@ mod tests {
     #[test]
     fn disk_and_permission_errors_are_classified() {
         let code = if cfg!(windows) { 112 } else { 28 };
-        assert_eq!(io_error(io::Error::from_raw_os_error(code)), NetError::Space);
+        assert_eq!(
+            io_error(io::Error::from_raw_os_error(code)),
+            NetError::Space
+        );
         assert!(matches!(
             io_error(io::Error::new(io::ErrorKind::PermissionDenied, "x")),
             NetError::Permission(_)
         ));
         let missing_dir = temp("sem-pasta").join("x").join("y.exe");
         assert!(matches!(
-            write_verified(&b""[..], &missing_dir, 0, &sha(b""), &AtomicBool::new(false), &mut |_: u64, _: u64| {}),
+            write_verified(
+                &b""[..],
+                &missing_dir,
+                0,
+                &sha(b""),
+                &AtomicBool::new(false),
+                &mut |_: u64, _: u64| {}
+            ),
             Err(NetError::Io(_))
         ));
     }

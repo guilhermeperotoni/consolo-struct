@@ -71,19 +71,25 @@ pub fn detect(probe: &Probe) -> InstallMode {
                 return unsupported_portable();
             };
             if managed(dir, probe.product_id) {
-                InstallMode::Launcher { dir: dir.to_path_buf() }
+                InstallMode::Launcher {
+                    dir: dir.to_path_buf(),
+                }
             } else if dir.join("uninstall.exe").is_file() {
-                InstallMode::WindowsNsis { dir: dir.to_path_buf() }
+                InstallMode::WindowsNsis {
+                    dir: dir.to_path_buf(),
+                }
             } else {
                 unsupported_portable()
             }
         }
         "linux" => match probe.appimage.filter(|p| p.is_absolute() && p.is_file()) {
             Some(path) => match path.parent() {
-                Some(dir) if managed(dir, probe.product_id) => {
-                    InstallMode::Launcher { dir: dir.to_path_buf() }
-                }
-                Some(_) => InstallMode::LinuxAppImage { path: path.to_path_buf() },
+                Some(dir) if managed(dir, probe.product_id) => InstallMode::Launcher {
+                    dir: dir.to_path_buf(),
+                },
+                Some(_) => InstallMode::LinuxAppImage {
+                    path: path.to_path_buf(),
+                },
                 None => unsupported_portable(),
             },
             None if probe.exe.starts_with("/usr") || probe.exe.starts_with("/opt") => {
@@ -186,16 +192,29 @@ mod tests {
         dir
     }
     fn probe<'a>(os: &'a str, exe: &'a Path, appimage: Option<&'a Path>) -> Probe<'a> {
-        Probe { os, debug: false, exe, appimage, product_id: "consolostruct" }
+        Probe {
+            os,
+            debug: false,
+            exe,
+            appimage,
+            product_id: "consolostruct",
+        }
     }
 
     #[test]
     fn launcher_marker_wins_over_nsis_uninstaller() {
         let dir = temp("launcher");
         fs::write(dir.join("uninstall.exe"), b"").unwrap();
-        fs::write(dir.join(MANAGED_MARKER), br#"{"appId":"consolostruct","schemaVersion":1}"#).unwrap();
+        fs::write(
+            dir.join(MANAGED_MARKER),
+            br#"{"appId":"consolostruct","schemaVersion":1}"#,
+        )
+        .unwrap();
         let exe = dir.join("consolostruct.exe");
-        assert!(matches!(detect(&probe("windows", &exe, None)), InstallMode::Launcher { .. }));
+        assert!(matches!(
+            detect(&probe("windows", &exe, None)),
+            InstallMode::Launcher { .. }
+        ));
     }
 
     #[test]
@@ -204,7 +223,10 @@ mod tests {
         fs::write(dir.join("uninstall.exe"), b"").unwrap();
         fs::write(dir.join(MANAGED_MARKER), br#"{"appId":"molastruct"}"#).unwrap();
         let exe = dir.join("consolostruct.exe");
-        assert!(matches!(detect(&probe("windows", &exe, None)), InstallMode::WindowsNsis { .. }));
+        assert!(matches!(
+            detect(&probe("windows", &exe, None)),
+            InstallMode::WindowsNsis { .. }
+        ));
     }
 
     #[test]
@@ -213,7 +235,10 @@ mod tests {
         let exe = dir.join("consolostruct.exe");
         assert!(matches!(
             detect(&probe("windows", &exe, None)),
-            InstallMode::Unsupported { kind: "portable", .. }
+            InstallMode::Unsupported {
+                kind: "portable",
+                ..
+            }
         ));
     }
 
@@ -225,29 +250,53 @@ mod tests {
         let mounted = Path::new("/tmp/.mount_Consol/usr/bin/consolostruct");
         assert_eq!(
             detect(&probe("linux", mounted, Some(image.as_path()))),
-            InstallMode::LinuxAppImage { path: image.clone() }
+            InstallMode::LinuxAppImage {
+                path: image.clone()
+            }
         );
         fs::write(dir.join(MANAGED_MARKER), br#"{"appId":"consolostruct"}"#).unwrap();
-        assert!(matches!(detect(&probe("linux", mounted, Some(image.as_path()))), InstallMode::Launcher { .. }));
+        assert!(matches!(
+            detect(&probe("linux", mounted, Some(image.as_path()))),
+            InstallMode::Launcher { .. }
+        ));
     }
 
     #[test]
     fn linux_package_manager_and_development_builds_do_not_self_install() {
         assert!(matches!(
             detect(&probe("linux", Path::new("/usr/bin/consolostruct"), None)),
-            InstallMode::Unsupported { kind: "package", .. }
+            InstallMode::Unsupported {
+                kind: "package",
+                ..
+            }
         ));
         let missing = Path::new("/nao/existe.AppImage");
         assert!(matches!(
-            detect(&probe("linux", Path::new("/home/u/consolostruct"), Some(missing))),
-            InstallMode::Unsupported { kind: "portable", .. }
+            detect(&probe(
+                "linux",
+                Path::new("/home/u/consolostruct"),
+                Some(missing)
+            )),
+            InstallMode::Unsupported {
+                kind: "portable",
+                ..
+            }
         ));
         let mut debug = probe("windows", Path::new("C:/x/consolostruct.exe"), None);
         debug.debug = true;
-        assert!(matches!(detect(&debug), InstallMode::Unsupported { kind: "development", .. }));
+        assert!(matches!(
+            detect(&debug),
+            InstallMode::Unsupported {
+                kind: "development",
+                ..
+            }
+        ));
         assert!(matches!(
             detect(&probe("macos", Path::new("/Applications/x"), None)),
-            InstallMode::Unsupported { kind: "unsupported", .. }
+            InstallMode::Unsupported {
+                kind: "unsupported",
+                ..
+            }
         ));
     }
 
