@@ -380,8 +380,14 @@ export function buildDetail(piece: Piece): Detail {
   const bottomAt = (x: number, offset: number) =>
     bottomOffsetDepth(concrete, x, offset);
   if (
-    !stirrupMandrelDefined(steelClassOf(q.fykTransverse), r.stitchDiameter) ||
-    !stirrupMandrelDefined(steelClassOf(q.fykTransverse), r.stirrupDiameter)
+    !stirrupMandrelDefined(
+      steelClassOf(p.materials.fykTransverse),
+      r.stitchDiameter,
+    ) ||
+    !stirrupMandrelDefined(
+      steelClassOf(p.materials.fykTransverse),
+      r.stirrupDiameter,
+    )
   )
     issue(
       "transverse-mandrel",
@@ -411,7 +417,11 @@ export function buildDetail(piece: Piece): Detail {
       const width =
         g.width - 2 * (g.cover + r.stirrupDiameter) - r.stitchDiameter;
       const depth = front + embedment,
-        mandrel = mandrelDiameter(r.stitchDiameter, q.fykTransverse, true);
+        mandrel = mandrelDiameter(
+          r.stitchDiameter,
+          p.materials.fykTransverse,
+          true,
+        );
       if (front < g.cover + r.stitchDiameter / 2)
         issue(
           "horizontal-front",
@@ -430,7 +440,7 @@ export function buildDetail(piece: Piece): Detail {
         description:
           family === "stitch" ? "Costura superior" : "Costura inferior",
         diameter: r.stitchDiameter,
-        grade: q.fykTransverse,
+        grade: p.materials.fykTransverse,
         quantity: 1,
         path: closedStirrup(depth, width, r.stitchDiameter, mandrel),
         mandrel,
@@ -469,7 +479,7 @@ export function buildDetail(piece: Piece): Detail {
   const lowerEnd = bottomAt(
     g.cover +
       r.stitchDiameter / 2 +
-      (mandrelDiameter(r.stitchDiameter, q.fykTransverse, true) +
+      (mandrelDiameter(r.stitchDiameter, p.materials.fykTransverse, true) +
         r.stitchDiameter) /
         2,
     g.cover + r.stitchDiameter / 2,
@@ -492,7 +502,7 @@ export function buildDetail(piece: Piece): Detail {
         ? "N3 · Grampo interno"
         : "N3 · Estribo vertical externo",
       diameter: r.stirrupDiameter,
-      grade: q.fykTransverse,
+      grade: p.materials.fykTransverse,
       quantity: 1,
       path: section.path,
       mandrel: transverse.mandrel,
@@ -561,7 +571,12 @@ export function buildDetail(piece: Piece): Detail {
   constructive.problems.forEach((message, i) =>
     issue(`constructive-fit-${i}`, message),
   );
-  if (!loopPinDefined(steelClassOf(q.fykTransverse), constructive.diameter))
+  if (
+    !loopPinDefined(
+      steelClassOf(p.materials.fykTransverse),
+      constructive.diameter,
+    )
+  )
     issue(
       "constructive-mandrel",
       "O mandril de N4 não está definido para esta classe de aço e bitola; conferir especificamente.",
@@ -570,7 +585,7 @@ export function buildDetail(piece: Piece): Detail {
     family: "constructive",
     description: "N4 · Armadura construtiva",
     diameter: constructive.diameter,
-    grade: q.fykTransverse,
+    grade: p.materials.fykTransverse,
     quantity: constructive.branches,
     path: constructive.path,
     mandrel: constructive.mandrel,

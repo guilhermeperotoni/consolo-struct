@@ -190,7 +190,7 @@ test("escolhas são por peça, entram no histórico e são preservadas no arquiv
   await policy(page).selectOption("table9062");
   await justification(page).fill(text);
   const save = await saved(page);
-  expect(save.data.schemaVersion).toBe(5);
+  expect(save.data.schemaVersion).toBe(6);
   expect(save.data.pieces[0].rebar).toEqual(before.pieces[0].rebar);
   expect(save.data.pieces[0].design).toMatchObject({
     gammaN: 1.5,

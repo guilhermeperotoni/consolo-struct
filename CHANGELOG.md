@@ -4,6 +4,9 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra o PR #44 com N3/N4 e γn atuais. Separa em Materiais o aço do tirante (CA-25/CA-50) e das secundárias (CA-25/CA-50/CA-60). O esquema 6 migra 1–5 sem perder N4, mantém CA-60 legado salvo e não suportado no tirante, e rejeita classes divergentes ou secundárias ausentes no formato novo.
+- Identifica o motor 0.5.0: aplica as resistências por família e o teto de 435 MPa também à ancoragem, conforme decisão da issue #35. Os casos padrão CA-50/CA-50 com γs=1,15 mantêm os resultados; memória, PDF e auditoria mostram as resistências adotadas.
+
 - Integra o PR #39 com N3/N3G/N4 atuais: a elevação representa os pinos e a barra transversal soldada por camada, com bitola, marca e quantidade coerentes com o detalhamento. Pinos sobrepostos mantêm uma única projeção, com sua quantidade identificada. O modo viga mantém P1 e não inventa barra soldada. Geometria compartilhada sem recalcular ELU na projeção; seção, cálculos, quantitativos, arquivos e exportações preservados.
 
 - Corrige a interferência física N3/N3G do PR #41: grampo em plano longitudinal próprio, com altura recalculada, projeção identificada na seção e quantitativos coerentes. Reutiliza a folga livre de N3; arranjos sem espaço recebem erro impeditivo de interferência, folga ou cobrimento, sem alterar demanda, passo ou quantidade de ramos.

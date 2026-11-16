@@ -1,4 +1,5 @@
 import { legacyN4Labels } from "./reference/legacy-n4-labels";
+import { legacySteelContract } from "./reference/legacy-steel-contract";
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { designSchema } from "../src/domain/design";
@@ -72,7 +73,7 @@ describe("Coeficientes dos materiais — resistências em MPa", () => {
         "anchorWeldedBar",
       ]);
       const raw = JSON.stringify(
-        legacyN4Labels(calculate(legacy)),
+        legacyN4Labels(legacySteelContract(calculate(legacy))),
         (key, value) =>
           metadata.has(key)
             ? undefined
@@ -95,7 +96,7 @@ describe("Coeficientes dos materiais — resistências em MPa", () => {
     expect(standard.fyd).toBeCloseTo(434.7826086956522, 12);
     const reduced = materialProperties(30, 500, 500, 1.3, 1.1);
     expect(reduced.fcd).toBeCloseTo(23.076923076923077, 12);
-    expect(reduced.fyd).toBeCloseTo(454.5454545454545, 12);
+    expect(reduced.fyd).toBe(435);
     expect(reduced.fctd).toBeCloseTo((0.7 * 0.3 * 30 ** (2 / 3)) / 1.3, 12);
     expect(reduced.fydLimited).toBe(435);
     expect(reduced.fywd).toBe(435);
@@ -115,7 +116,7 @@ describe("Coeficientes dos materiais — resistências em MPa", () => {
         v = r.values;
       expect(r.combinations[0].method).toBe(method);
       expect(v.fcd).toBeCloseTo(30 / 1.3, 12);
-      expect(v.fyd).toBeCloseTo(500 / 1.1, 12);
+      expect(v.fyd).toBe(435);
       expect(v.fydLimited).toBe(435);
       expect(v.fywd).toBe(435);
       expect(v.fcd1).toBeCloseTo((0.85 * 0.88 * 30) / 1.3, 12);

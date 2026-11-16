@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { shortFixture } from "../fixtures";
+import { exampleProject } from "../../src/domain/model";
 
 const selector = (page: Page) =>
-  page.getByRole("combobox", { name: "Classe de aço do tirante", exact: true });
+  page.getByRole("combobox", { name: "Aço do tirante", exact: true });
 const tab = (page: Page, name: string) =>
   page.getByRole("tab", { name, exact: true });
 const command = (page: Page, action: string) =>
@@ -74,7 +75,7 @@ test("legado 420 MPa abre personalizado sem mutação, permanece unsupported e p
   );
   await expect(
     page.getByText(
-      "O motor admite aço do tirante CA-25, CA-50 ou CA-60; informe fyk 250, 500 ou 600 MPa.",
+      "O motor admite aço do tirante somente CA-25 ou CA-50; informe fyk 250 ou 500 MPa. O valor legado foi preservado, sem conversão automática.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -85,7 +86,7 @@ test("legado 420 MPa abre personalizado sem mutação, permanece unsupported e p
   await expect(selector(page)).toHaveValue("420");
 });
 
-test("as três escolhas gravam números e preservam outras peças, histórico e salvamento", async ({
+test("as duas escolhas gravam números e preservam outras peças, histórico e salvamento", async ({
   page,
 }) => {
   await materials(page);
@@ -93,10 +94,9 @@ test("as três escolhas gravam números e preservam outras peças, histórico e 
     "Personalizado (420 MPa), não suportado",
     "CA-25 · 250 MPa",
     "CA-50 · 500 MPa",
-    "CA-60 · 600 MPa",
   ]);
   const original = (await save(page)).data;
-  for (const fyk of [250, 500, 600]) {
+  for (const fyk of [250, 500]) {
     await selector(page).selectOption(String(fyk));
     const selected = (await save(page)).data;
     expect(selected.pieces[0].materials).toEqual({
@@ -108,13 +108,9 @@ test("as três escolhas gravam números e preservam outras peças, histórico e 
       materials: { ...original.pieces[0].materials, fyk },
     });
     expect(selected.pieces[1]).toEqual(original.pieces[1]);
-    await expect(selector(page).locator("option")).toHaveCount(3);
+    await expect(selector(page).locator("option")).toHaveCount(2);
   }
-  await expect(page.locator(".inspector")).toContainText(
-    "η1 = 1,0 · pendente de confirmação",
-  );
-  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
-  await expect(selector(page)).toHaveValue("500");
+  await expect(page.locator(".inspector")).toContainText("η1 = 2,25");
   await page.getByRole("button", { name: "Desfazer", exact: true }).click();
   await expect(selector(page)).toHaveValue("250");
   await page.getByRole("button", { name: "Desfazer", exact: true }).click();
@@ -122,7 +118,7 @@ test("as três escolhas gravam números e preservam outras peças, histórico e 
   await page.getByRole("button", { name: "Refazer", exact: true }).click();
   await expect(selector(page)).toHaveValue("250");
   const saved = await save(page);
-  await selector(page).selectOption("600");
+  await selector(page).selectOption("500");
   await page.getByLabel("Abrir arquivo de projeto").setInputFiles(saved.path);
   await materials(page);
   await expect(selector(page)).toHaveValue("250");
@@ -134,7 +130,6 @@ test("memória, PDF e auditoria mostram a classe e η1, mantendo os estados do m
   for (const [fyk, steel, eta] of [
     [250, "CA-25", "1,0"],
     [500, "CA-50", "2,25"],
-    [600, "CA-60", "1,0"],
   ] as const) {
     await materials(page);
     await selector(page).selectOption(String(fyk));
@@ -151,10 +146,6 @@ test("memória, PDF e auditoria mostram a classe e η1, mantendo os estados do m
     await expect(paper).toContainText(
       `Aderência do tirante ${steel}: η1 = ${eta}`,
     );
-    if (fyk === 600)
-      await expect(paper).toContainText(
-        "pendente de confirmação pelo responsável técnico",
-      );
     const event = page.waitForEvent("download");
     await page.getByRole("button", { name: "Baixar PDF", exact: true }).click();
     const pdf = (await readFile((await (await event).path())!)).toString(
@@ -174,31 +165,56 @@ test("memória, PDF e auditoria mostram a classe e η1, mantendo os estados do m
   }
 });
 
-test("aço transversal oferece somente CA-50/CA-60 e usa a mesma apresentação sem alterar o tirante", async ({
+test("aço secundário admite as três classes em Materiais e deixa de aparecer em Cálculo", async ({
   page,
 }) => {
-  await tab(page, "Modelo").click();
+  await materials(page);
+  const transverse = page.getByRole("combobox", {
+    name: "Aço da costura e estribos",
+    exact: true,
+  });
+  await expect(transverse.locator("option")).toHaveText([
+    "CA-25 · 250 MPa",
+    "CA-50 · 500 MPa",
+    "CA-60 · 600 MPa",
+  ]);
+  const original = (await save(page)).data;
+  for (const fykTransverse of [250, 500, 600]) {
+    await transverse.selectOption(String(fykTransverse));
+    const project = (await save(page)).data;
+    expect(project.schemaVersion).toBe(6);
+    expect(project.pieces[0].materials).toEqual({
+      ...original.pieces[0].materials,
+      fykTransverse,
+    });
+    expect(project.pieces[0].design).not.toHaveProperty("fykTransverse");
+    expect(project.pieces[1]).toEqual(original.pieces[1]);
+  }
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(transverse).toHaveValue("500");
+  await page.getByRole("button", { name: "Refazer", exact: true }).click();
+  await expect(transverse).toHaveValue("600");
+  const saved = await save(page);
+  await transverse.selectOption("250");
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles(saved.path);
+  await materials(page);
+  await expect(transverse).toHaveValue("600");
   await command(page, "design").click();
   await page
     .locator(".design-panel")
     .getByText("Durabilidade e disposição", { exact: true })
     .click();
-  const transverse = page
-    .locator(".design-panel")
-    .getByRole("combobox", { name: "Aço da costura e estribos", exact: true });
-  await expect(transverse.locator("option")).toHaveText([
-    "CA-50 · 500 MPa",
-    "CA-60 · 600 MPa",
-  ]);
-  await transverse.selectOption("600");
-  const project = (await save(page)).data;
-  expect(project.pieces[0].design.fykTransverse).toBe(600);
-  expect(project.pieces[0].materials.fyk).toBe(420);
+  await expect(
+    page.getByRole("combobox", {
+      name: "Aço da costura e estribos",
+      exact: true,
+    }),
+  ).toHaveCount(0);
 });
 
 test("seletor é acessível por teclado e cabe nos dois temas em janela estreita", async ({
   page,
-}) => {
+}, info) => {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 });
     for (const theme of ["light", "dark"]) {
@@ -213,6 +229,18 @@ test("seletor é acessível por teclado e cabe nos dois temas em janela estreita
       await selector(page).press("ArrowDown");
       await selector(page).press("Enter");
       await expect(selector(page)).toHaveValue("500");
+      const secondary = page.getByRole("combobox", {
+        name: "Aço da costura e estribos",
+        exact: true,
+      });
+      await secondary.focus();
+      await expect(secondary).toBeFocused();
+      await secondary.press("Home");
+      await secondary.press("Enter");
+      await expect(secondary).toHaveValue("250");
+      await secondary.press("End");
+      await secondary.press("Enter");
+      await expect(secondary).toHaveValue("600");
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -223,6 +251,170 @@ test("seletor é acessível por teclado e cabe nos dois temas em janela estreita
           (el) => el.getBoundingClientRect().width <= innerWidth,
         ),
       ).toBe(true);
+      await page.screenshot({
+        path: info.outputPath(`steel-${theme}-${width}.png`),
+      });
     }
   }
+});
+
+test("abertura com migração preserva CA-60 legado e secundárias, participa do histórico e invalida cálculo", async ({
+  page,
+}, info) => {
+  const original = (await save(page)).data;
+  const legacy = structuredClone(original);
+  legacy.schemaVersion = 4;
+  legacy.pieces[0].materials.fyk = 600;
+  delete legacy.pieces[0].materials.fykTransverse;
+  legacy.pieces[0].design.fykTransverse = 600;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "legado.lume.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(legacy)),
+  });
+  await materials(page);
+  await expect(selector(page)).toHaveValue("600");
+  await expect(selector(page).locator("option:checked")).toHaveText(
+    "CA-60 · legado, não suportado no tirante",
+  );
+  await expect(selector(page).locator("option:checked")).toHaveJSProperty(
+    "disabled",
+    true,
+  );
+  const transverse = page.getByRole("combobox", {
+    name: "Aço da costura e estribos",
+    exact: true,
+  });
+  await expect(transverse).toHaveValue("600");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await materials(page);
+  await page.screenshot({ path: info.outputPath("steel-legacy-390.png") });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await materials(page);
+  const migrated = (await save(page)).data;
+  expect(migrated.schemaVersion).toBe(6);
+  expect(migrated.pieces[0].materials).toMatchObject({
+    fyk: 600,
+    fykTransverse: 600,
+  });
+  expect(migrated.pieces[0].design).not.toHaveProperty("fykTransverse");
+  expect(migrated.pieces[1]).toEqual(original.pieces[1]);
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("420");
+  await expect(transverse).toHaveValue("500");
+  await page.getByRole("button", { name: "Refazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("600");
+  await calculate(page);
+  await expect(page.locator(".result-summary").first()).toContainText(
+    "Fora do domínio do motor",
+  );
+  await materials(page);
+  await selector(page).selectOption("500");
+  await expect(
+    page.getByText("Cálculo desatualizado", { exact: true }),
+  ).toBeVisible();
+  await calculate(page);
+  await materials(page);
+  await transverse.selectOption("250");
+  await expect(
+    page.getByText("Cálculo desatualizado", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(transverse).toHaveValue("600");
+  await expect(
+    page.getByText("Cálculo desatualizado", { exact: true }),
+  ).toHaveCount(0);
+});
+
+test("memória e auditoria exibem resistência limitada na ancoragem com γs=1,10", async ({
+  page,
+}) => {
+  const project = (await save(page)).data;
+  project.pieces[0].materials = { fck: 30, fyk: 500, fykTransverse: 600 };
+  project.pieces[0].design.gammaS = 1.1;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "limite.consolo.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(project)),
+  });
+  await calculate(page);
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Memória", exact: true })
+    .click();
+  const paper = page.locator(".report-paper");
+  await paper.locator(".case-memory summary").first().click();
+  await expect(paper).toContainText("fyd adotado na ancoragem");
+  await expect(paper).toContainText("fywd adotado da costura e estribos");
+  await expect(paper).toContainText("435,0");
+  await command(page, "export").click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Cálculo auditável/ }).click();
+  const audit = JSON.parse(
+    await readFile((await (await download).path())!, "utf8"),
+  );
+  expect(audit.input.materials.fykTransverse).toBe(600);
+  expect(audit.result.values.fyd).toBe(435);
+  expect(audit.result.values.fywd).toBe(435);
+  const v = audit.result.values;
+  expect(v.lb).toBe(
+    Math.max(
+      (project.pieces[0].rebar.tieDiameter * 435) / (4 * v.fbd),
+      25 * project.pieces[0].rebar.tieDiameter,
+    ),
+  );
+});
+
+test("esquema 5 preserva N4 e γn ao migrar; arquivo 6 incompleto não substitui o projeto", async ({
+  page,
+}) => {
+  const p = shortFixture();
+  p.rebar.stirrupBranches = 4;
+  p.rebar.constructiveDiameter = 12.5;
+  p.detailing.pins = 3;
+  p.design.gammaNPolicy = "table9062";
+  p.design.gammaNJustification =
+    "Premissas preservadas na integração dos materiais.";
+  const raw = JSON.parse(
+    JSON.stringify({ ...exampleProject(), schemaVersion: 5, pieces: [p] }),
+  );
+  delete raw.pieces[0].materials.fykTransverse;
+  raw.pieces[0].design.fykTransverse = 600;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "n4-esquema5.consolo.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(raw)),
+  });
+  await materials(page);
+  await expect(
+    page.getByRole("combobox", {
+      name: "Aço da costura e estribos",
+      exact: true,
+    }),
+  ).toHaveValue("600");
+  const migrated = await save(page);
+  expect(migrated.data.schemaVersion).toBe(6);
+  expect(migrated.data.pieces[0].rebar).toEqual(p.rebar);
+  expect(migrated.data.pieces[0].detailing).toEqual(p.detailing);
+  expect(migrated.data.pieces[0].design.gammaNJustification).toBe(
+    p.design.gammaNJustification,
+  );
+  expect(migrated.data.pieces[0].design).not.toHaveProperty("fykTransverse");
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("420");
+  await page.getByRole("button", { name: "Refazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("500");
+  const invalid = structuredClone(migrated.data);
+  delete invalid.pieces[0].materials.fykTransverse;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "incompleto.consolo.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(invalid)),
+  });
+  await expect(page.getByRole("status")).toContainText("Projeto inválido");
+  expect((await save(page)).data).toEqual(migrated.data);
+  await page
+    .getByLabel("Abrir arquivo de projeto")
+    .setInputFiles(migrated.path);
+  expect((await save(page)).data).toEqual(migrated.data);
 });

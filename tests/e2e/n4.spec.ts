@@ -76,7 +76,7 @@ test("migra, edita ramos/bitola, desfaz/refaz e salva por peça", async ({
   await page.getByRole("button", { name: "Refazer", exact: true }).click();
   await expect(page.getByLabel("Diâmetro N4")).toHaveValue("10");
   const { path, project } = await saved(page);
-  expect(project.schemaVersion).toBe(5);
+  expect(project.schemaVersion).toBe(6);
   expect(project.pieces[0].rebar).toMatchObject({
     stirrupBranches: 4,
     constructiveDiameter: 10,

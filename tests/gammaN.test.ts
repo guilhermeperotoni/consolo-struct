@@ -18,6 +18,7 @@ import { pieceDrawing } from "../src/detailing/drawing";
 import { drawingDxf, drawingSvg, steelCsv } from "../src/detailing/exports";
 import { cantileverFixture, shortFixture } from "./fixtures";
 import { legacyN4Labels } from "./reference/legacy-n4-labels";
+import { legacySteelContract } from "./reference/legacy-steel-contract";
 
 const justification =
   "GN-9062-TESTE: enquadramento da produção conferido pelo responsável.";
@@ -233,7 +234,7 @@ describe("Padrão e assinaturas de entradas", () => {
       delete legacy.design.gammaNJustification;
       expect(
         createHash("sha256")
-          .update(JSON.stringify(calculate(legacy)))
+          .update(JSON.stringify(legacySteelContract(calculate(legacy))))
           .digest("hex"),
       ).toBe(hash);
     },
@@ -275,7 +276,7 @@ describe("Padrão e assinaturas de entradas", () => {
       // reverta somente os rótulos públicos, sem retirar números ou estados.
       delete legacy.rebar.stirrupBranches;
       delete legacy.rebar.constructiveDiameter;
-      const result = legacyN4Labels(calculate(legacy));
+      const result = legacyN4Labels(legacySteelContract(calculate(legacy)));
       expect(result).not.toHaveProperty("gammaNDecision");
       expect(
         createHash("sha256").update(JSON.stringify(result)).digest("hex"),

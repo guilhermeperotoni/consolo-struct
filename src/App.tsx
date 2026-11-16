@@ -1213,7 +1213,7 @@ export default function App() {
                     const fresh = newPiece(1);
                     commit({
                       format: "lumeconsolo",
-                      schemaVersion: 5,
+                      schemaVersion: 6,
                       name: form.name.trim(),
                       client: form.client.trim(),
                       author: form.author.trim(),

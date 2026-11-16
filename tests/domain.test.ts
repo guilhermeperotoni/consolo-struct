@@ -47,7 +47,7 @@ describe("Arquivos e invalidação dos resultados", () => {
         }
       }
       const opened = decodeProject(JSON.stringify(legacy));
-      expect(opened.schemaVersion).toBe(5);
+      expect(opened.schemaVersion).toBe(6);
       expect(opened).toEqual(original);
       for (const p of opened.pieces) {
         expect(p.design.gammaNPolicy).toBe("floor12");
@@ -73,11 +73,11 @@ describe("Arquivos e invalidação dos resultados", () => {
     project.pieces[0].materials.fyk = 420;
     const opened = decodeProject(JSON.stringify(project));
     expect(opened).toEqual(project);
-    expect(opened.schemaVersion).toBe(5);
+    expect(opened.schemaVersion).toBe(6);
     const result = calculate(opened.pieces[0]);
     expect(result.status).toBe("unsupported");
     expect(result.reasons).toContain(
-      "O motor admite aço do tirante CA-25, CA-50 ou CA-60; informe fyk 250, 500 ou 600 MPa.",
+      "O motor admite aço do tirante somente CA-25 ou CA-50; informe fyk 250 ou 500 MPa. O valor legado foi preservado, sem conversão automática.",
     );
     expect(result.combinations).toEqual([]);
     expect(decodeProject(JSON.stringify(opened)).pieces[0].materials.fyk).toBe(
@@ -92,7 +92,7 @@ describe("Arquivos e invalidação dos resultados", () => {
       delete p.design.gammaS;
     }
     const decoded = decodeProject(JSON.stringify(legacy));
-    expect(decoded.schemaVersion).toBe(5);
+    expect(decoded.schemaVersion).toBe(6);
     for (const p of decoded.pieces) {
       expect(p.design.gammaC).toBe(1.4);
       expect(p.design.gammaS).toBe(1.15);

@@ -116,7 +116,7 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
     layout = stirrupLayout(p);
   const mandrel = mandrelDiameter(
     r.stirrupDiameter,
-    p.design.fykTransverse,
+    p.materials.fykTransverse,
     true,
   );
   const radius = (mandrel + r.stirrupDiameter) / 2;
@@ -229,7 +229,7 @@ export function constructiveGeometry(p: Piece) {
     t = transverseGeometry(p);
   const concrete = concreteProfile(p),
     diameter = t.diameter;
-  const nominalMandrel = mandrelDiameter(diameter, p.design.fykTransverse);
+  const nominalMandrel = mandrelDiameter(diameter, p.materials.fykTransverse);
   const nominalRadius = (nominalMandrel + diameter) / 2;
   const radius =
     concrete.status === "removed"

@@ -1,4 +1,3 @@
-import { legacyN4Labels } from "./reference/legacy-n4-labels";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { calculate } from "../src/domain/engine";
@@ -83,7 +82,7 @@ describe("Classes de aço e regras centralizadas", () => {
   });
 });
 
-describe("Regressão capturada no upstream e903617, antes da integração de classes", () => {
+describe("Regressão de aderência/ancoragem e snapshot no esquema 6 — classes calculáveis", () => {
   it.each([
     [
       250,
@@ -91,7 +90,7 @@ describe("Regressão capturada no upstream e903617, antes da integração de cla
       1072.1989323512282,
       751.4420173462395,
       100,
-      "670f1ed3b4fa00fb2f785260aa490608dbe27f796bfde5159865f19c473220b6",
+      "950ccbaa44231cb82f73f49f41917c8d9c0c6b51ea3106e751cecdc5a2207f2c",
     ],
     [
       500,
@@ -99,32 +98,20 @@ describe("Regressão capturada no upstream e903617, antes da integração de cla
       953.0657176455362,
       333.974229931662,
       160,
-      "b8af3f1276ca2bac1dce5924c04fd13e7aacc2d194db22725bf7cc58a58d699a",
-    ],
-    [
-      600,
-      1.013763853835911,
-      2573.277437642948,
-      771.9832312928844,
-      120,
-      "deee9d8fcfd3fc553e8e6bca3dcb61a6174c9148f12d4db18fd6c92781366adb",
+      "248b44885cd9db7ce8bcaf3218b5a6c8066ebdd93fba51196779df30f1db564f",
     ],
   ] as const)(
-    "preserva todo o resultado e a ancoragem para fyk=%s MPa",
+    "preserva a ancoragem e fixa o resultado atual para fyk=%s MPa",
     (fyk, fbd, lb, lbNec, pin, hash) => {
       const p = shortFixture();
       p.materials.fyk = fyk;
       p.rebar.tieDiameter = 20;
       p.design.bond = "poor";
-      // Mesmo projeto capturado antes do recorte; preserve o hash integral,
-      // números/fingerprint preservados; somente rótulos públicos são normalizados
-      // pelo helper documentado de N4. Campo ausente usa keep.
+      // Números de aderência/ancoragem históricos; snapshot atualizado para
+      // o contrato 6, motor 0.5.0 e metadados N4/γn da master atual.
+      // As expectativas numéricas de ancoragem acima continuam explícitas.
       delete (p.design as Partial<typeof p.design>).excessConcrete;
-      delete (p.rebar as Partial<typeof p.rebar>).stirrupBranches;
-      delete (p.rebar as Partial<typeof p.rebar>).constructiveDiameter;
-      delete (p.design as Partial<typeof p.design>).gammaNPolicy;
-      delete (p.design as Partial<typeof p.design>).gammaNJustification;
-      const result = legacyN4Labels(calculate(p));
+      const result = calculate(p);
       expect(result.values.fbd).toBe(fbd);
       expect(result.values.lb).toBe(lb);
       expect(result.values.anchorRequired).toBe(lbNec);

@@ -36,7 +36,9 @@ export const pieceSchema = z.object({
   }),
   materials: z.object({
     fck: z.number().min(20).max(90),
+    // Preserve numeric legacy tie values; the engine checks class eligibility.
     fyk: z.number().min(250).max(600),
+    fykTransverse: z.union([z.literal(250), z.literal(500), z.literal(600)]),
   }),
   rebar: rebarSchema,
   design: designSchema,
@@ -44,7 +46,7 @@ export const pieceSchema = z.object({
 });
 export const projectSchema = z.object({
   format: z.literal("lumeconsolo"),
-  schemaVersion: z.literal(5),
+  schemaVersion: z.literal(6),
   name: z.string().min(1).max(120),
   client: z.string().max(120),
   author: z.string().max(120),
@@ -128,7 +130,7 @@ export function newPiece(index: number): Piece {
       columnWidth: 300,
     },
     loads: { vertical: 350000, horizontal: 40000, gamma: 1.4 },
-    materials: { fck: 30, fyk: 500 },
+    materials: { fck: 30, fyk: 500, fykTransverse: 500 },
     design: defaultDesign(),
     detailing: defaultDetailing(),
     rebar: {
@@ -163,11 +165,58 @@ export function exampleProject(): Project {
   second.rebar.tieDiameter = 16;
   return {
     format: "lumeconsolo",
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: "Pavilhão Horizonte",
     client: "Projeto de demonstração",
     author: "",
     pieces: [first, second],
+  };
+}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Capture the old material before schema 1 resets illustrative design data. */
+function migrateSecondarySteel(data: unknown): unknown {
+  if (
+    !isRecord(data) ||
+    ![1, 2, 3, 4, 5].includes(data.schemaVersion as number) ||
+    !Array.isArray(data.pieces)
+  )
+    return data;
+  return {
+    ...data,
+    pieces: data.pieces.map((p: unknown) => {
+      if (!isRecord(p) || !isRecord(p.materials)) return p;
+      const design = isRecord(p.design) ? p.design : undefined;
+      const oldValue = design && Object.hasOwn(design, "fykTransverse");
+      const newValue = Object.hasOwn(p.materials, "fykTransverse");
+      if (
+        oldValue &&
+        newValue &&
+        design.fykTransverse !== p.materials.fykTransverse
+      )
+        throw new Error(
+          "Projeto inválido: os aços secundários em Cálculo e Materiais divergem. Confira os valores no arquivo antes de abrir; nenhuma classe foi escolhida automaticamente.",
+        );
+      return {
+        ...p,
+        materials: {
+          ...p.materials,
+          fykTransverse: oldValue
+            ? design.fykTransverse
+            : newValue
+              ? p.materials.fykTransverse
+              : 500,
+        },
+        ...(design
+          ? {
+              design: Object.fromEntries(
+                Object.entries(design).filter(([k]) => k !== "fykTransverse"),
+              ),
+            }
+          : {}),
+      };
+    }),
   };
 }
 export function decodeProject(text: string): Project {
@@ -179,6 +228,7 @@ export function decodeProject(text: string): Project {
   } catch {
     throw new Error("O arquivo não contém um JSON válido.");
   }
+  data = migrateSecondarySteel(data);
   // Version 1 carried illustrative bars only. New engineering data must be reviewed.
   if (
     data &&
@@ -279,10 +329,28 @@ export function decodeProject(text: string): Project {
       ),
     };
   }
+  // Schema 5 already belongs to N4; steel separation has a distinct schema 6.
+  if (isRecord(data) && data.schemaVersion === 5)
+    data = { ...data, schemaVersion: 6 };
+  // Do not let Zod silently strip a misplaced material from a canonical file.
+  if (
+    isRecord(data) &&
+    data.schemaVersion === 6 &&
+    Array.isArray(data.pieces) &&
+    data.pieces.some(
+      (p) =>
+        isRecord(p) &&
+        isRecord(p.design) &&
+        Object.hasOwn(p.design, "fykTransverse"),
+    )
+  )
+    throw new Error(
+      "Projeto inválido: no esquema 6 o aço secundário deve estar em materials.fykTransverse, sem duplicação em design.",
+    );
   const parsed = projectSchema.safeParse(data);
   if (!parsed.success)
     throw new Error(
-      "Projeto inválido ou versão não suportada. Use um arquivo .lume.json compatível (esquemas 1, 2, 3, 4 ou 5).",
+      "Projeto inválido ou versão não suportada. Use um arquivo .lume.json compatível (esquemas 1, 2, 3, 4, 5 ou 6).",
     );
   return parsed.data;
 }

@@ -84,7 +84,7 @@ for (const beam of [false, true])
         await readFile((await (await event).path())!, "utf8"),
       );
       expect(saved.pieces[0]).toEqual(p);
-      expect(saved.schemaVersion).toBe(5);
+      expect(saved.schemaVersion).toBe(6);
     });
 
 test("edição dos pinos chega à elevação, ao histórico e ao arquivo reaberto", async ({

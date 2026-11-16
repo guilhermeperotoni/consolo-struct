@@ -23,7 +23,7 @@ describe("Critério selecionável do limite da biela — issue #5", () => {
       delete piece.design.strutLimit;
     });
     const opened = decodeProject(JSON.stringify(old));
-    expect(opened.schemaVersion).toBe(5);
+    expect(opened.schemaVersion).toBe(6);
     expect(
       opened.pieces.every((piece) => piece.design.strutLimit === "fcd2"),
     ).toBe(true);

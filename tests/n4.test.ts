@@ -64,8 +64,8 @@ const numericResult = (r: CalculationResult) => ({
 });
 
 describe("N3/N4 — esquema e migração", () => {
-  it("inicia no esquema 5, com dois ramos e N4 Ø8 obrigatória", () => {
-    expect(exampleProject().schemaVersion).toBe(5);
+  it("inicia no esquema 6, com dois ramos e N4 Ø8 obrigatória", () => {
+    expect(exampleProject().schemaVersion).toBe(6);
     expect(newPiece(1).rebar).toMatchObject({
       stirrupBranches: 2,
       constructiveDiameter: 8,
@@ -92,7 +92,7 @@ describe("N3/N4 — esquema e migração", () => {
       const project = decodeProject(
         JSON.stringify({ ...legacy, results: { old: "untrusted" } }),
       );
-      expect(project.schemaVersion).toBe(5);
+      expect(project.schemaVersion).toBe(6);
       for (const p of project.pieces) {
         expect(p.rebar).toMatchObject({
           stirrupBranches: 2,

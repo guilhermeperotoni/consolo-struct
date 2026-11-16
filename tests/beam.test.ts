@@ -37,7 +37,7 @@ describe("Armado como viga — disponibilidade e compatibilidade", () => {
       delete p.detailing.beamBottomDiameter;
     }
     const decoded = decodeProject(JSON.stringify(legacy));
-    expect(decoded.schemaVersion).toBe(5);
+    expect(decoded.schemaVersion).toBe(6);
     for (const p of decoded.pieces) {
       expect(p.detailing.barArrangement).toBe("consolo");
       expect(p.detailing.beamBottomCount).toBe(2);
