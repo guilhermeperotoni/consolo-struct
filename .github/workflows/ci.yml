@@ -28,7 +28,7 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm run build
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --trace retain-on-failure
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

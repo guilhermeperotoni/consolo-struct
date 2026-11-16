@@ -1,23 +1,21 @@
+import {
+  constructiveGeometry,
+  transverseGeometry,
+  translatePath,
+  projectedConstructiveSection,
+} from "../detailing/transverse";
+import { samplePath } from "../detailing/geometry";
 import { tieLayout } from "../domain/engine";
 import { reactionGeometry, upperStitchLayout } from "../domain/theory";
-import {
-  bottomOffsetDepth,
-  bottomReach,
-  concreteProfile,
-} from "../domain/profile";
+import { bottomReach, concreteProfile } from "../domain/profile";
 import { useId, useMemo } from "react";
 import {
   beamArrangementActive,
   beamBarPositions,
   beamLayout,
 } from "../detailing/beam";
-import { buildDetail } from "../detailing/model";
-import {
-  barPathData,
-  elevationShapes,
-  sectionCrossings,
-} from "../detailing/projection";
 import { number, type Piece, type GeometryKey } from "../domain/model";
+import { elevationShapes } from "../detailing/projection";
 type Props = {
   piece: Piece;
   section?: boolean;
@@ -113,6 +111,15 @@ export default function Drawing({
 }: Props) {
   const uid = useId().replaceAll(":", "");
   const g = p.geometry;
+  const transverse = useMemo(() => transverseGeometry(p), [p]);
+  const rootSection = useMemo(
+    () =>
+      (p.rebar.stirrupBranches ?? 2) === 4
+        ? { ...transverse, sections: transverse.sections.slice(0, 2) }
+        : transverseGeometry(p, 0),
+    [p, transverse],
+  );
+  const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
   const stitchLevels = [
@@ -131,47 +138,47 @@ export default function Drawing({
     () => (beamArrangementActive(p) ? beamLayout(p) : null),
     [p],
   );
-  // Families shared with the fabrication drawing, projected by one module.
-  const detail = useMemo(() => (rebar ? buildDetail(p) : null), [p, rebar]);
-  const shapes = useMemo(
-    () => (detail ? elevationShapes(detail) : []),
-    [detail],
+  const connections = useMemo(
+    () => (rebar && !section ? elevationShapes(p) : []),
+    [p, rebar, section],
   );
-  const crossings = useMemo(
-    () => (detail ? sectionCrossings(detail) : []),
-    [detail],
+  const s = Math.min(
+    480 / (g.columnWidth + g.length),
+    340 / (g.height + 80),
+    // Keep the section and its external dimensions inside the drawing.
+    // Elevation keeps its existing scale; narrow sections are unchanged.
+    section ? 480 / g.width : Infinity,
   );
-  const s = Math.min(480 / (g.columnWidth + g.length), 340 / (g.height + 80));
   const sectionLeft = 400 - (g.width * s) / 2;
   const stitchRadius = (p.rebar.stitchDiameter * s) / 2;
   const stitchInset = (depth: number) => {
-    // Erode N3's rounded centerline by the complete N2 symbol and both
-    // half-strokes. This graphical clearance does not change bar levels
-    // or define an additional physical reinforcement spacing rule.
-    const corner = Math.min(
-      8,
-      ((g.width - 2 * g.cover) * s) / 2,
-      ((g.height - 2 * g.cover) * s) / 2,
-    );
-    const clearance = stitchRadius + s / 2 + 2.5 / 2;
+    // Erode the actual outer N3 contour, with its physical radius and stroke.
+    // This symbol clearance does not change N2 levels or reinforcement design.
+    const outer = rootSection.sections[0];
+    const corner = rootSection.radius * s;
+    const clearance =
+      stitchRadius + s / 2 + (p.rebar.stirrupDiameter * s) / 2 + s / 2;
     const edgeDistance =
-      Math.min(depth - g.cover, g.height - g.cover - depth) * s;
+      Math.min(
+        depth - rootSection.stirrupOffset,
+        rootSection.stirrupOffset + outer.height - depth,
+      ) * s;
     const innerCorner = Math.max(0, corner - clearance);
     const cornerInset =
       corner -
       Math.sqrt(
         Math.max(0, innerCorner ** 2 - Math.max(0, corner - edgeDistance) ** 2),
       );
-    return (
-      g.cover * s +
-      Math.max(
-        (p.rebar.stirrupDiameter + p.rebar.stitchDiameter / 2) * s,
-        clearance,
-        cornerInset,
-      ) +
-      s / 2
-    );
+    return rootSection.stirrupOffset * s + Math.max(clearance, cornerInset);
   };
+  const stitchProjectionFits = stitchLevels.every(
+    (depth) =>
+      Math.min(
+        depth - rootSection.stirrupOffset,
+        rootSection.stirrupOffset + rootSection.sections[0].height - depth,
+      ) >=
+      (p.rebar.stirrupDiameter + p.rebar.stitchDiameter) / 2,
+  );
   const sectionCentroid = 140 + layout.dPrime * s;
   const dPrimeLabel = `d’ = ${number(layout.dPrime / 10, 1)} cm`;
   const ox = (800 - (g.columnWidth + g.length) * s) / 2 + g.columnWidth * s,
@@ -267,18 +274,75 @@ export default function Drawing({
               height={g.height * s}
               fill={`url(#${uid}concrete)`}
             />
+            {rebar && !stitchProjectionFits && (
+              <text
+                x={400}
+                y={135}
+                textAnchor="middle"
+                className="dimension-text"
+                fill="var(--danger)"
+              >
+                N2 sem espaço no contorno projetado de N3: conferir disposição;
+                níveis preservados.
+              </text>
+            )}
+            {rebar && rootSection.branches === 4 && (
+              <text
+                x={400}
+                y={120}
+                textAnchor="middle"
+                className="dimension-text"
+              >
+                N3/N3G e N4: projeção do par · x ={" "}
+                {rootSection.sections
+                  .map((s) => number(s.x / 10, 2))
+                  .join(" / ")}{" "}
+                cm
+              </text>
+            )}
             {rebar && (
               <>
-                <rect
+                <g
                   {...groupProps("N3")}
-                  x={400 - (g.width * s) / 2 + g.cover * s}
-                  y={140 + g.cover * s}
-                  width={(g.width - 2 * g.cover) * s}
-                  height={(g.height - 2 * g.cover) * s}
-                  rx="8"
                   fill="none"
-                  strokeWidth="2.5"
-                />
+                  strokeWidth={p.rebar.stirrupDiameter * s}
+                >
+                  {rootSection.sections.map((section, i) => (
+                    <path
+                      key={i}
+                      data-n3-part={section.internal ? "grampo" : "externo"}
+                      data-longitudinal-position={section.x}
+                      d={samplePath(
+                        translatePath(
+                          section.path,
+                          section.offset,
+                          rootSection.stirrupOffset,
+                        ),
+                        24,
+                      )
+                        .map(
+                          (pt, j) =>
+                            `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${140 + pt.y * s}`,
+                        )
+                        .join("")}
+                    />
+                  ))}
+                </g>
+                <g {...groupProps("N4")}>
+                  {projectedConstructiveSection(
+                    constructive,
+                    rootSection.sections,
+                  ).map(({ v, depth, x }, i) => (
+                    <circle
+                      key={i}
+                      data-longitudinal-position={x}
+                      cx={400 + (v - g.width / 2) * s}
+                      cy={140 + depth * s}
+                      r={(constructive.diameter * s) / 2}
+                      strokeWidth="0.5"
+                    />
+                  ))}
+                </g>
                 <g {...groupProps("N1")}>
                   {layout.rows.flatMap((row, j) =>
                     Array.from({ length: row.count }, (_, i) => {
@@ -322,22 +386,6 @@ export default function Drawing({
                         cy={140 + beam.bottom.depthSupport * s}
                         r={Math.max(3, (beam.bottom.diameter * s) / 2)}
                         strokeWidth="1"
-                      />
-                    ))}
-                  </g>
-                )}
-                {crossings.length > 0 && (
-                  <g
-                    className="steel-mounting"
-                    data-testid="mounting-section"
-                    strokeWidth="1"
-                  >
-                    {crossings.map((c, i) => (
-                      <circle
-                        key={i}
-                        cx={sectionLeft + c.lateral * s}
-                        cy={140 + c.depth * s}
-                        r={Math.max(3, (c.bar.diameter * s) / 2)}
                       />
                     ))}
                   </g>
@@ -474,24 +522,27 @@ export default function Drawing({
                   })}
                 </g>
                 <g {...groupProps("N3")} fill="none" strokeWidth="2">
-                  {Array.from({ length: p.rebar.stirrupCount }, (_, i) => {
-                    const x =
-                      g.cover +
-                      ((g.length - 2 * g.cover) * i) /
-                        Math.max(1, p.rebar.stirrupCount - 1);
-                    const bottom = cut
-                      ? bottomOffsetDepth(
-                          concrete,
-                          x,
-                          g.cover + p.rebar.stirrupDiameter / 2,
-                        )
-                      : g.height -
-                        ((g.height - g.tipHeight) * x) / g.length -
-                        g.cover;
-                    return (
-                      <path key={i} d={`M${X(x)} ${Y(g.cover)}V${Y(bottom)}`} />
-                    );
-                  })}
+                  {transverse.sections.map((section, i) => (
+                    <path
+                      key={i}
+                      data-n3-part={section.internal ? "grampo" : "externo"}
+                      data-longitudinal-position={section.x}
+                      d={`M${X(section.x)} ${Y(transverse.stirrupOffset)}V${Y(transverse.stirrupOffset + section.height)}`}
+                    />
+                  ))}
+                </g>
+                <g {...groupProps("N4")} fill="none" strokeWidth="2.5">
+                  {constructive.positions.map((v, i) => (
+                    <path
+                      key={i}
+                      data-transverse-position={v}
+                      d={polyline(samplePath(constructive.path, 24))}
+                    >
+                      <title>
+                        {`N4 construtiva · barra ${i + 1} de ${constructive.branches} · sem contribuição resistente`}
+                      </title>
+                    </path>
+                  ))}
                 </g>
                 <g
                   {...groupProps("N1")}
@@ -512,44 +563,6 @@ export default function Drawing({
                           />
                         ))}
                 </g>
-                {shapes.length > 0 && (
-                  <g
-                    className="steel-detail-families"
-                    data-testid="detail-families"
-                    fill="none"
-                    strokeWidth="3"
-                  >
-                    {shapes.map((shape, i) =>
-                      shape.kind === "path" ? (
-                        <path
-                          key={i}
-                          data-family={shape.bar.family}
-                          d={barPathData(shape.path, X, Y, s)}
-                        >
-                          <title>{shape.bar.description}</title>
-                        </path>
-                      ) : shape.kind === "line" ? (
-                        <path
-                          key={i}
-                          data-family={shape.bar.family}
-                          d={`M${X(shape.a.x)} ${Y(shape.a.y)}L${X(shape.b.x)} ${Y(shape.b.y)}`}
-                        >
-                          <title>{shape.bar.description}</title>
-                        </path>
-                      ) : (
-                        <circle
-                          key={i}
-                          data-family={shape.bar.family}
-                          cx={X(shape.center.x)}
-                          cy={Y(shape.center.y)}
-                          r={Math.max(3, (shape.bar.diameter * s) / 2)}
-                        >
-                          <title>{shape.bar.description}</title>
-                        </circle>
-                      ),
-                    )}
-                  </g>
-                )}
                 {beam && (
                   <path
                     className="steel-positive"
@@ -561,6 +574,41 @@ export default function Drawing({
                   >
                     <title>Armadura positiva (armado como viga)</title>
                   </path>
+                )}
+                {connections.length > 0 && (
+                  <g
+                    className="steel-detail-families"
+                    data-testid="detail-families"
+                    fill="none"
+                  >
+                    {connections.map((shape) => (
+                      <g
+                        key={shape.mark}
+                        data-family={shape.family}
+                        data-mark={shape.mark}
+                        data-quantity={shape.quantity}
+                        role="img"
+                        aria-label={`${shape.mark} · ${shape.quantity} × Ø${number(shape.diameter)} mm · ${shape.description}`}
+                      >
+                        <title>
+                          {`${shape.mark} · ${shape.quantity} × Ø${number(shape.diameter)} mm · ${shape.description}${shape.family === "pin" ? "; projeção dos pinos sobrepostos na elevação" : ""}`}
+                        </title>
+                        {shape.kind === "line" ? (
+                          <path
+                            d={`M${X(shape.a.x)} ${Y(shape.a.y)}L${X(shape.b.x)} ${Y(shape.b.y)}`}
+                            strokeWidth={shape.diameter * s}
+                          />
+                        ) : (
+                          <circle
+                            cx={X(shape.center.x)}
+                            cy={Y(shape.center.y)}
+                            r={(shape.diameter * s) / 2}
+                            strokeWidth="0.5"
+                          />
+                        )}
+                      </g>
+                    ))}
+                  </g>
                 )}
               </>
             )}

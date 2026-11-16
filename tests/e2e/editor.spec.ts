@@ -1,3 +1,4 @@
+import { transverseGeometry } from "../../src/detailing/transverse";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exampleProject, number, type Piece } from "../../src/domain/model";
@@ -147,6 +148,7 @@ test("seção A–A: N2 acompanha largura, cobrimento e bitolas editadas", async
   const project = exampleProject();
   const piece = project.pieces[0];
   piece.design.lowerStitchCount = 1;
+  piece.geometry.tipHeight = 300;
   await page.addInitScript(
     (raw) => localStorage.setItem("consolostruct.project.v1", raw),
     JSON.stringify(project),
@@ -193,15 +195,18 @@ async function expectInternalStitches(page: Page, piece: Piece) {
     const concrete = el.querySelector(
       "[data-testid=drawing-model] > rect",
     ) as SVGRectElement;
-    const stirrup = el.querySelector(".steel-N3") as SVGRectElement;
+    const stirrup = el.querySelector(
+      '.steel-N3 [data-n3-part="externo"]',
+    ) as SVGPathElement;
+    const box = stirrup.getBBox();
     return {
       top: concrete.y.baseVal.value,
       scale: concrete.height.baseVal.value,
-      left: stirrup.x.baseVal.value,
-      right: stirrup.x.baseVal.value + stirrup.width.baseVal.value,
-      stirrupTop: stirrup.y.baseVal.value,
-      stirrupHeight: stirrup.height.baseVal.value,
-      corner: stirrup.rx.baseVal.value,
+      left: box.x,
+      right: box.x + box.width,
+      stirrupTop: box.y,
+      stirrupHeight: box.height,
+
       stroke: parseFloat(getComputedStyle(stirrup).strokeWidth),
       bars: [...el.querySelectorAll<SVGCircleElement>(".steel-N2 circle")].map(
         (bar) => ({
@@ -235,7 +240,11 @@ async function expectInternalStitches(page: Page, piece: Piece) {
     // Signed distance to the rounded N3 centerline, including both strokes.
     const halfWidth = (geometry.right - geometry.left) / 2;
     const halfHeight = geometry.stirrupHeight / 2;
-    const corner = Math.min(geometry.corner, halfWidth, halfHeight);
+    const corner = Math.min(
+      transverseGeometry(piece).radius * scale,
+      halfWidth,
+      halfHeight,
+    );
     const dx =
       Math.abs(bar.x - (geometry.left + halfWidth)) - halfWidth + corner;
     const dy =
@@ -293,6 +302,19 @@ for (const arrangement of [
     layers: 1,
     ties: 4,
   },
+  {
+    width: 400,
+    height: 500,
+    length: 450,
+    cover: 25,
+    stitch: 6.3,
+    stirrup: 6.3,
+    upper: 6,
+    lower: 1,
+    layers: 1,
+    ties: 4,
+    branches: 4,
+  },
 ]) {
   test(`seção A–A: N2 inteiro dentro de N3 (${arrangement.width}/${arrangement.height}, φ${arrangement.stitch})`, async ({
     page,
@@ -304,8 +326,10 @@ for (const arrangement of [
       height: arrangement.height,
       length: arrangement.length,
       cover: arrangement.cover,
+      tipHeight: arrangement.height === 600 ? 500 : 200,
     });
     Object.assign(piece.rebar, {
+      stirrupBranches: "branches" in arrangement ? arrangement.branches : 2,
       stitchDiameter: arrangement.stitch,
       stirrupDiameter: arrangement.stirrup,
       stitchCount: arrangement.upper,
@@ -606,7 +630,9 @@ for (const layers of [1, 3]) {
         .getByRole("button", { name: "Ajustar desenho à tela" })
         .click();
       await testInfo.attach(`secao-aa-${layers}-camadas-${theme}`, {
-        body: await canvas.screenshot(),
+        body: await canvas.screenshot({
+          path: testInfo.outputPath(`secao-aa-${layers}-camadas-${theme}.png`),
+        }),
         contentType: "image/png",
       });
     }
@@ -628,3 +654,125 @@ for (const layers of [1, 3]) {
     }
   });
 }
+
+for (const layers of [1, 3]) {
+  test(`seção A–A: d’ cabe após enquadrar seções largas (${layers} camada(s))`, async ({
+    page,
+  }, testInfo) => {
+    const project = exampleProject();
+    const piece = project.pieces[0];
+    piece.geometry.width = 1000;
+    piece.design.tieLayers = layers;
+    piece.rebar.tieCount = layers === 1 ? 4 : 7;
+    await page.addInitScript(
+      (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+      JSON.stringify(project),
+    );
+    await page.goto("/");
+    await page
+      .locator(".document-tabs")
+      .getByRole("button", { name: "Seção A–A", exact: true })
+      .click();
+    const canvas = page.locator(".canvas");
+    const dimension = page.getByRole("img", { name: /^d’ =/ });
+    const expectInside = async () => {
+      await expectSectionDPrime(page, piece);
+      const bounds = (await canvas.boundingBox())!;
+      const text = (await dimension.locator("text").boundingBox())!;
+      expect(text.x).toBeGreaterThan(bounds.x);
+      expect(text.y).toBeGreaterThan(bounds.y);
+      expect(text.x + text.width).toBeLessThan(bounds.x + bounds.width);
+      expect(text.y + text.height).toBeLessThan(bounds.y + bounds.height);
+    };
+    for (const theme of ["light", "dark"]) {
+      if (theme === "dark")
+        await page.getByRole("button", { name: "Alternar tema" }).click();
+      for (const width of [1000, 2000, 6000, 300, 1000]) {
+        await editSectionField(
+          page.getByRole("textbox", { name: /^Largura/ }),
+          String(width / 10),
+        );
+        piece.geometry.width = width;
+        await page
+          .getByRole("button", { name: "Ajustar desenho à tela" })
+          .click();
+        await expectInside();
+      }
+      await page
+        .getByRole("button", { name: "Diminuir zoom no desenho" })
+        .click();
+      const bounds = (await canvas.boundingBox())!;
+      await page.mouse.move(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+      );
+      await page.mouse.down({ button: "middle" });
+      await page.mouse.move(
+        bounds.x + bounds.width / 2 + 20,
+        bounds.y + bounds.height / 2 + 15,
+      );
+      await page.mouse.up({ button: "middle" });
+      await page
+        .getByRole("button", { name: "Ajustar desenho à tela" })
+        .click();
+      await expectInside();
+      await testInfo.attach(`secao-larga-dprime-${layers}-${theme}`, {
+        body: await canvas.screenshot({
+          path: testInfo.outputPath(
+            `secao-larga-dprime-${layers}-${theme}.png`,
+          ),
+        }),
+        contentType: "image/png",
+      });
+    }
+  });
+}
+
+test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de costura", async ({
+  page,
+}) => {
+  const project = exampleProject(),
+    piece = project.pieces[0];
+  Object.assign(piece.geometry, {
+    width: 500,
+    height: 600,
+    length: 250,
+    cover: 40,
+  });
+  Object.assign(piece.rebar, {
+    stitchDiameter: 16,
+    stirrupDiameter: 10,
+    stitchCount: 4,
+    tieCount: 7,
+  });
+  Object.assign(piece.design, { lowerStitchCount: 1, tieLayers: 3 });
+  await page.addInitScript(
+    (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+    JSON.stringify(project),
+  );
+  await page.goto("/");
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  await expect(page.locator("#piece-drawing")).toContainText(
+    "N2 sem espaço no contorno projetado",
+  );
+  const centers = await page
+    .locator(".steel-N2 circle")
+    .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
+  const layout = tieLayout(piece),
+    levels = [
+      ...upperStitchLayout(piece, layout).levels,
+      layout.dPrime + (5 * layout.d) / 6,
+    ];
+  const scale = Math.min(
+    480 / (piece.geometry.columnWidth + piece.geometry.length),
+    340 / (piece.geometry.height + 80),
+    480 / piece.geometry.width,
+  );
+  expect(centers).toHaveLength(levels.length * 2);
+  centers.forEach((y, i) =>
+    expect(y).toBeCloseTo(140 + levels[Math.floor(i / 2)] * scale, 8),
+  );
+});
