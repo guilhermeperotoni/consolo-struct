@@ -7,10 +7,10 @@
 // encerra o aplicativo. Instalações do Struct Launcher nunca são alteradas aqui.
 pub mod catalog;
 pub mod install;
-pub mod net;
-mod transaction;
 #[cfg(test)]
 mod live_test;
+pub mod net;
+mod transaction;
 #[cfg(windows)]
 mod windows;
 

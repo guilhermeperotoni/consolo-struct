@@ -119,8 +119,8 @@ reinício, preservação do rascunho e coerência de atalhos e inventário do La
   anteriores continuam precisando do Launcher ou de instalação manual para chegar até ela.
 - Não há proteção contra a reapresentação de um catálogo antigo, mas válido; o efeito máximo é
   não oferecer a versão mais nova.
-- O Windows em instalação por máquina (fora do padrão por usuário) pode pedir elevação ao
-  instalador.
+- O Windows em instalação por máquina (fora do padrão por usuário) pode exigir atualização
+  manual com elevação. Se o instalador não puder ser iniciado, o aplicativo permanece aberto.
 - Se outra cópia independente do ConsoloStruct foi instalada pelo NSIS em outra pasta, o
   registro de desinstalação do Windows é compartilhado entre as cópias.
 
@@ -134,4 +134,20 @@ A implementação original e os commits `0473dcf` e `9add095` são de **[@guilhe
 - No Windows, um auxiliar fixo embutido confere novamente os bytes, impede escrita no pacote e mantém a trava enquanto o NSIS executa. O aplicativo só encerra depois da confirmação de que a proteção e o instalador foram iniciados. Os caminhos são passados como dados de ambiente, sem interpolação em código; não são alteradas políticas de execução.
 - O ambiente nativo exige Rust 1.89 ou superior para as travas de arquivo da biblioteca padrão. O CI passa a executar a suíte nativa em Linux e Windows. Os testes de processo/arquivos não são uma certificação de upgrade de todos os instaladores e ambientes.
 
-A validação da composição, incluindo regressões do Launcher, reserva após download, interrupção de processo, cancelamento e passagem ao instalador, será registrada após a execução do CI. Os resultados históricos acima continuam associados aos ambientes em que foram obtidos.
+### Evidências da composição com a master
+
+O [CI 43935297150](https://github.com/ricardocorsini/consolo-struct/actions/runs/43935297150), de 16/11/2026, validou a composição com a master `57ce0e8`:
+
+| Verificação                             | Resultado                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript e testes do núcleo/interface | 423 testes aprovados                                                                                                                                              |
+| Navegador Chromium                      | 120 testes aprovados, incluindo bloqueio do reinício quando o rascunho não pode ser gravado ou o salvamento é cancelado                                           |
+| Rust em Ubuntu 22.04 x86_64             | 36 testes aprovados; dois testes de rede/instalação ficam ignorados na suíte padrão                                                                               |
+| Rust em Windows Server 2022 x64         | 36 testes aprovados, incluindo execução nativa do auxiliar com um instalador de teste e conferência da trava durante a instalação                                 |
+| Upgrade AppImage oficial, 0.7.0 → 0.7.1 | Aprovado sob Xvfb: ambas as janelas foram abertas, a nova versão foi identificada pelo título e os bytes do AppImage instalado conferiram com o catálogo assinado |
+| Upgrade NSIS oficial, 0.7.0 → 0.7.1     | Aprovado: instalação anterior aberta, passagem ao auxiliar, fechamento da instância antiga e reabertura da 0.7.1, com versão do executável conferida              |
+| Dados dos testes nativos                | Arquivo de projeto e arquivos sentinela nas pastas de dados preservados nos dois sistemas                                                                         |
+
+Os testes controlados usam somente pacotes do catálogo oficial, autenticados pelo envelope e pela assinatura de pacote, com tamanho e SHA-256 conferidos. São ignorados por padrão e só instalam com a opção explícita `CONSOLO_NATIVE_UPGRADE_CI=1` e `CI=true`, em host descartável. O workflow habilita essa etapa para PRs do próprio repositório e execução manual; PRs de forks não executam instaladores.
+
+Essa evidência exercita o backend desta revisão com os pacotes oficiais existentes. A interação com a oferta e o salvamento é coberta pelos testes de navegador com a ponte simulada. A inspeção manual do pacote que incluir a nova interface continua recomendada antes de publicar a próxima versão. Não foi publicada release nem alterado o catálogo durante a revisão. Os resultados históricos acima continuam associados aos ambientes em que foram obtidos.
