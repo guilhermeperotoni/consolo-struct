@@ -331,7 +331,7 @@ describe("Limites, combinações e rastreabilidade", () => {
       }),
     };
     const restored = decodeProject(JSON.stringify(old));
-    expect(restored.schemaVersion).toBe(5);
+    expect(restored.schemaVersion).toBe(6);
     expect(restored.pieces[0].design.inputsConfirmed).toBe(false);
   });
   it("os resultados são determinísticos e não alteram a entrada", () => {
@@ -832,7 +832,7 @@ describe("Ancoragem no suporte: α e piso da razão (issue #12)", () => {
     expect(file).not.toContain("supportWeldedBar");
     expect(file).not.toContain("anchorRatioFloor");
     const restored = decodeProject(file);
-    expect(restored.schemaVersion).toBe(5);
+    expect(restored.schemaVersion).toBe(6);
     const explicit = decodeProject(file);
     for (const piece of explicit.pieces) {
       piece.design.supportWeldedBar = false;

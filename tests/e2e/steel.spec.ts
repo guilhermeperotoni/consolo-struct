@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { shortFixture } from "../fixtures";
+import { exampleProject } from "../../src/domain/model";
 
 const selector = (page: Page) =>
   page.getByRole("combobox", { name: "Aço do tirante", exact: true });
@@ -181,7 +182,7 @@ test("aço secundário admite as três classes em Materiais e deixa de aparecer 
   for (const fykTransverse of [250, 500, 600]) {
     await transverse.selectOption(String(fykTransverse));
     const project = (await save(page)).data;
-    expect(project.schemaVersion).toBe(5);
+    expect(project.schemaVersion).toBe(6);
     expect(project.pieces[0].materials).toEqual({
       ...original.pieces[0].materials,
       fykTransverse,
@@ -283,7 +284,7 @@ test("abertura com migração preserva CA-60 legado e secundárias, participa do
   });
   await expect(transverse).toHaveValue("600");
   const migrated = (await save(page)).data;
-  expect(migrated.schemaVersion).toBe(5);
+  expect(migrated.schemaVersion).toBe(6);
   expect(migrated.pieces[0].materials).toMatchObject({
     fyk: 600,
     fykTransverse: 600,
@@ -354,4 +355,58 @@ test("memória e auditoria exibem resistência limitada na ancoragem com γs=1,1
       25 * project.pieces[0].rebar.tieDiameter,
     ),
   );
+});
+
+test("esquema 5 preserva N4 e γn ao migrar; arquivo 6 incompleto não substitui o projeto", async ({
+  page,
+}) => {
+  const p = shortFixture();
+  p.rebar.stirrupBranches = 4;
+  p.rebar.constructiveDiameter = 12.5;
+  p.detailing.pins = 3;
+  p.design.gammaNPolicy = "table9062";
+  p.design.gammaNJustification =
+    "Premissas preservadas na integração dos materiais.";
+  const raw = JSON.parse(
+    JSON.stringify({ ...exampleProject(), schemaVersion: 5, pieces: [p] }),
+  );
+  delete raw.pieces[0].materials.fykTransverse;
+  raw.pieces[0].design.fykTransverse = 600;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "n4-esquema5.consolo.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(raw)),
+  });
+  await materials(page);
+  await expect(
+    page.getByRole("combobox", {
+      name: "Aço da costura e estribos",
+      exact: true,
+    }),
+  ).toHaveValue("600");
+  const migrated = await save(page);
+  expect(migrated.data.schemaVersion).toBe(6);
+  expect(migrated.data.pieces[0].rebar).toEqual(p.rebar);
+  expect(migrated.data.pieces[0].detailing).toEqual(p.detailing);
+  expect(migrated.data.pieces[0].design.gammaNJustification).toBe(
+    p.design.gammaNJustification,
+  );
+  expect(migrated.data.pieces[0].design).not.toHaveProperty("fykTransverse");
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("420");
+  await page.getByRole("button", { name: "Refazer", exact: true }).click();
+  await expect(selector(page)).toHaveValue("500");
+  const invalid = structuredClone(migrated.data);
+  delete invalid.pieces[0].materials.fykTransverse;
+  await page.getByLabel("Abrir arquivo de projeto").setInputFiles({
+    name: "incompleto.consolo.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(invalid)),
+  });
+  await expect(page.getByRole("status")).toContainText("Projeto inválido");
+  expect((await save(page)).data).toEqual(migrated.data);
+  await page
+    .getByLabel("Abrir arquivo de projeto")
+    .setInputFiles(migrated.path);
+  expect((await save(page)).data).toEqual(migrated.data);
 });

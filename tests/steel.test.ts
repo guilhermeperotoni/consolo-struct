@@ -82,7 +82,7 @@ describe("Classes de aço e regras centralizadas", () => {
   });
 });
 
-describe("Regressão de aderência/ancoragem e snapshot no esquema 5 — classes calculáveis", () => {
+describe("Regressão de aderência/ancoragem e snapshot no esquema 6 — classes calculáveis", () => {
   it.each([
     [
       250,
@@ -90,7 +90,7 @@ describe("Regressão de aderência/ancoragem e snapshot no esquema 5 — classes
       1072.1989323512282,
       751.4420173462395,
       100,
-      "1770f70e1f225701f893ece62e1dbfb8b11de12c2e18f229cdcad3fa49a90692",
+      "950ccbaa44231cb82f73f49f41917c8d9c0c6b51ea3106e751cecdc5a2207f2c",
     ],
     [
       500,
@@ -98,7 +98,7 @@ describe("Regressão de aderência/ancoragem e snapshot no esquema 5 — classes
       953.0657176455362,
       333.974229931662,
       160,
-      "08ced5c56f1c7af0bc17753c26780c4630192e868bd0ec2f58a3469646d672b0",
+      "248b44885cd9db7ce8bcaf3218b5a6c8066ebdd93fba51196779df30f1db564f",
     ],
   ] as const)(
     "preserva a ancoragem e fixa o resultado atual para fyk=%s MPa",
@@ -108,7 +108,8 @@ describe("Regressão de aderência/ancoragem e snapshot no esquema 5 — classes
       p.rebar.tieDiameter = 20;
       p.design.bond = "poor";
       // Números de aderência/ancoragem históricos; snapshot atualizado para
-      // a nova localização dos materiais e resistência secundária da issue #35.
+      // o contrato 6, motor 0.5.0 e metadados N4/γn da master atual.
+      // As expectativas numéricas de ancoragem acima continuam explícitas.
       delete (p.design as Partial<typeof p.design>).excessConcrete;
       const result = calculate(p);
       expect(result.values.fbd).toBe(fbd);

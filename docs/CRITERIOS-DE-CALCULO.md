@@ -1,4 +1,4 @@
-# Motor 0.4.0 — critérios LC-ELU-2026.2
+# Motor 0.5.0 — critérios LC-ELU-2026.2
 
 A revisão 0.7 acrescenta a política complementar e a reação deslocada descritas em [Comparação Base Consolo](COMPARACAO-BASE-CONSOLO.md). As equações abaixo definem a base normativa/documentada; quando o complemento está ativo, usa-se ainda o envelope bibliográfico explicitado na seção seguinte.
 
@@ -29,17 +29,17 @@ A edição bibliográfica completa dos dois livros não foi inferida a partir de
 
 ## Decisões entre fontes
 
-| Questão                    | Diferença encontrada                                                                                     | Decisão do motor                                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| γn                         | 6118 §22.2 indica pelo menos 1,2; 9062 §7.3.1.1 distingue produção e predominância da ação permanente    | `max(1,2; γn9062; γn informado)`. É política conservadora explícita, não declaração de que os textos são idênticos                |
-| Fronteira a/d = 0,5        | A classificação literal da 6118 inclui a fronteira em curtos; a 9062 a inclui em muito curtos            | Convenção da 9062. A memória registra o modelo; bielas pode ser solicitado para monolítico                                        |
-| Costura                    | 9062 expressa **área por altura**; 6118 prescreve **área total** de pelo menos 40% do tirante nos curtos | Converter corretamente as grandezas e usar o envelope descrito adiante                                                            |
-| Resistência no muito curto | Limites de 6 MPa e coeficientes antigos aparecem em El Debs                                              | Usar a expressão da 9062:2017, com teto 8 MPa; não copiar limites históricos como norma atual                                     |
-| H mínimo                   | O livro traz a aproximação histórica H/V = 0,20                                                          | Usar tipo de apoio da 9062:2017 ou resultante de análise justificada                                                              |
-| Taxa mecânica máxima       | ω = 0,15 aparece no tratamento histórico                                                                 | Não apresentá-la como limite atual. No modelo de atrito, a demonstração de ductilidade permanece pendente de análise complementar |
-| Suspensão                  | O tratamento simplificado do livro pode atribuir parcela da reação ao mecanismo direto                   | Dimensionar para **100% da ação indireta**, conforme as normas fornecidas                                                         |
-| Barra soldada              | Regras de várias barras transversais e regra de barra única são diferentes                               | Barra única com mesmo diâmetro, geometria e qualificação específica; não usar a regra de 60% do tirante                           |
-| CA-60 / aderência          | A definição de η1 depende da superfície do fio/barra                                                     | Preservar η1 = 2,25 para CA-50 e 1,00 para CA-25/CA-60; CA-60 pendente de confirmação pelo responsável técnico, conforme issue #3 |
+| Questão                    | Diferença encontrada                                                                                     | Decisão do motor                                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| γn                         | 6118 §22.2 indica pelo menos 1,2; 9062 §7.3.1.1 distingue produção e predominância da ação permanente    | Padrão `floor12`: `max(1,2; γn9062; γn informado)`. Opção explícita `table9062`, com justificativa e `review`, segue a tabela sem esse piso. Não declara equivalência entre os textos |
+| Fronteira a/d = 0,5        | A classificação literal da 6118 inclui a fronteira em curtos; a 9062 a inclui em muito curtos            | Convenção da 9062. A memória registra o modelo; bielas pode ser solicitado para monolítico                                                                                            |
+| Costura                    | 9062 expressa **área por altura**; 6118 prescreve **área total** de pelo menos 40% do tirante nos curtos | Converter corretamente as grandezas e usar o envelope descrito adiante                                                                                                                |
+| Resistência no muito curto | Limites de 6 MPa e coeficientes antigos aparecem em El Debs                                              | Usar a expressão da 9062:2017, com teto 8 MPa; não copiar limites históricos como norma atual                                                                                         |
+| H mínimo                   | O livro traz a aproximação histórica H/V = 0,20                                                          | Usar tipo de apoio da 9062:2017 ou resultante de análise justificada                                                                                                                  |
+| Taxa mecânica máxima       | ω = 0,15 aparece no tratamento histórico                                                                 | Não apresentá-la como limite atual. No modelo de atrito, a demonstração de ductilidade permanece pendente de análise complementar                                                     |
+| Suspensão                  | O tratamento simplificado do livro pode atribuir parcela da reação ao mecanismo direto                   | Dimensionar para **100% da ação indireta**, conforme as normas fornecidas                                                                                                             |
+| Barra soldada              | Regras de várias barras transversais e regra de barra única são diferentes                               | Barra única com mesmo diâmetro, geometria e qualificação específica; não usar a regra de 60% do tirante                                                                               |
+| CA-60 / aderência          | A definição de η1 depende da superfície do fio/barra                                                     | Preservar η1 = 2,25 para CA-50 e 1,00 para CA-25/CA-60; CA-60 pendente de confirmação pelo responsável técnico, conforme issue #3                                                     |
 
 ## Unidades e entradas
 
@@ -52,7 +52,10 @@ Internamente: **mm, N, MPa = N/mm² e mm²**. Na interface: cm, kN, MPa e cm², 
 - `columnWidth`: dimensão disponível do suporte na direção da ancoragem.
 - N1: ramos longitudinais resistentes. Uma alça horizontal tem dois ramos na mesma camada.
 - N2/N2b: estribos horizontais fechados nos 2/3 d superiores e terço inferior.
-- N3: estribos verticais construtivos; N4: fendilhamento transversal sob apoio; N5: suspensão. Cada estribo contado fornece dois ramos efetivos.
+- N3: posições de armadura vertical, com **2 ou 4 ramos efetivos**, configurados em `rebar.stirrupBranches`. Quatro ramos correspondem a um estribo fechado externo mais um grampo interno da mesma bitola, por posição.
+- `As,N3,prov = ramosN3 × quantidadeN3 × πφ²/4`; a sugestão arredonda para cima `As,N3,req/(ramosN3 × πφ²/4)` e mantém os limites existentes de quantidade e espaçamento. Demanda e distribuição longitudinal não mudam. Cinco posições Ø6,3 resultam em 311,7245310524472 mm² com dois ramos e 623,4490621048944 mm² com quatro.
+- N4 é construtiva obrigatória: `quantidadeN4 = ramosN3`, bitola inicial Ø8 mm em `rebar.constructiveDiameter`. Não é somada a nenhuma capacidade nem dimensionada pela sugestão. Seu ajuste físico pertence às pendências de detalhamento.
+- N5: fendilhamento transversal; N6: suspensão. Mantêm dois ramos efetivos por estribo e os campos `splitting*`/`suspension*`, sem dupla contagem.
 - As áreas de confinamento da ancoragem e de armadura local do suporte são informadas como áreas efetivas, com direção e ancoragem compatíveis. O software não presume sua existência.
 
 ### Altura útil
@@ -83,6 +86,31 @@ No modo característico:
 
 No modo de cálculo, V e H já incluem os coeficientes, inclusive γn. O fator aplicado pelo motor é 1. As combinações são **fornecidas pelo usuário**; o programa não decompõe G/Q, não gera combinações segundo NBR 8681 e não usa coeficientes excepcionais.
 
+### Política do coeficiente adicional γn
+
+Em **Configurações > Dimensionamento > Critérios da peça selecionada** ou **Modelo > Critérios da peça selecionada**, no painel Cálculo, a escolha de γn pertence à peça. O padrão **Piso conservador de 1,2** (`floor12`) mantém a expressão acima, inclusive um mínimo informado maior que 1,2. Arquivos sem os campos novos recebem `gammaNPolicy = "floor12"` e `gammaNJustification = ""`. O esquema atual é 6, preservando os dados de N3/N4 e migrando os esquemas 1–5.
+
+A opção **Tabela NBR 9062, sem piso de 1,2** (`table9062`) usa exatamente os valores que já estavam no motor:
+
+| Produção                  | Ação permanente predominante | γn da tabela |
+| ------------------------- | ---------------------------- | ------------ |
+| Pré-fabricado (`factory`) | Sim                          | 1,00         |
+| Pré-fabricado (`factory`) | Não                          | 1,10         |
+| Pré-moldado (`precast`)   | Sim                          | 1,10         |
+| Pré-moldado (`precast`)   | Não                          | 1,20         |
+
+A escolha exige justificativa com pelo menos **10 caracteres após retirar espaços nas extremidades**, até 1000 caracteres no arquivo. Sem justificativa válida, o motor retorna `unsupported`, sem valores de dimensionamento. O mínimo γn informado permanece guardado, mas não participa do cálculo nem fica visível enquanto a tabela está ativa. Ao voltar ao padrão, o mínimo anterior reaparece.
+
+Para **moldado no local** (`cast`), a opção da tabela fica desabilitada e se aplica a regra conservadora atual: `max(1,2; γn informado)`. Assim, um mínimo informado de 1,5 continua produzindo γn = 1,5. Mesmo num arquivo que solicite `table9062` para `cast`, a política efetiva é `floor12`; a justificativa inativa não é exigida nem gera a conferência da tabela. A solicitação fica registrada no arquivo e na auditoria, sem redução automática.
+
+Com a tabela ativa e justificativa válida, a verificação `gammaNPolicy` permanece **review**, inclusive quando o valor tabelado for 1,2. Ela registra γn adotado, o piso de referência 1,2 e a justificativa. Uma falha independente ainda pode governar o estado geral, sem transformar a conferência em aprovação. A sugestão de armaduras conserva essa pendência.
+
+Exemplo: Vk = 350 kN, γf = 1,4, pré-moldado com ação permanente predominante: `floor12` produz Vd = 588 kN; `table9062` produz Vd = **539 kN**. H característico e peso próprio opcional recebem o mesmo fator, mantendo suas regras anteriores. Forças já de cálculo continuam com fator 1; a escolha não as majora outra vez.
+
+A decisão aparece na tela, memória, PDF e cálculo auditável. Exportações geométricas e de detalhamento incluem notas quando há solicitação da tabela; os CSVs acrescentam colunas de política, coeficientes e justificativa nessas peças/projetos, mantendo o formato anterior quando todas usam o padrão. A justificativa é preservada como texto da entrada. `values.gammaN` e `values.gammaN9062` continuam numéricos; o resultado só acrescenta `gammaNDecision` quando há solicitação explícita de tabela.
+
+Trata-se de decisão explícita do responsável técnico, **não** de declaração de equivalência entre NBR 6118 e NBR 9062 nem de confirmação automática do enquadramento da produção. Referências: NBR 9062:2017 §7.3.1.1; NBR 6118:2026 §22.2. Os valores foram preservados do código; os textos normativos não foram consultados nem reproduzidos nesta contribuição. Consulte a [validação da issue #1](VALIDACAO-POLITICA-GAMMA-N.md).
+
 | Apoio com movimento horizontal permitido | H estimado / Vd |
 | ---------------------------------------- | --------------: |
 | Seco                                     |            0,80 |
@@ -111,7 +139,7 @@ As classes e suas regras estão centralizadas em `src/domain/steel.ts`. Em **Mod
 
 O aço secundário também rege as verificações de suspensão, fendilhamento e confinamento. As parcelas de costura N2 obtidas por força usam `fywd`; mínimos definidos por área, como 0,4As,tir e 0,0015bh, permanecem iguais. No modelo de viga, os estribos resistentes usam `fywd`, enquanto o mínimo que depende de fywk continua usando o valor característico secundário. Nenhuma bitola, arranjo ou regra geométrica foi alterada.
 
-O esquema **5** migra os esquemas 1–4: move `design.fykTransverse` para `materials.fykTransverse` e remove o campo antigo. O valor secundário é preservado antes da reposição dos parâmetros ilustrativos do esquema 1; se ausente, recebe 500 MPa. A abertura de arquivo entra no histórico existente, limpa resultados anteriores e pode ser desfeita/refeita; todas as edições posteriores também participam do histórico. Não se retorna ao contrato antigo dentro do histórico: os projetos abertos ficam normalizados no esquema 5.
+O esquema **6** migra os esquemas 1–5: move `design.fykTransverse` para `materials.fykTransverse` e remove o campo antigo. O valor secundário é preservado antes da reposição dos parâmetros ilustrativos do esquema 1; se ausente, recebe 500 MPa. A abertura de arquivo entra no histórico existente, limpa resultados anteriores e pode ser desfeita/refeita; todas as edições posteriores também participam do histórico. Não se retorna ao contrato antigo dentro do histórico: os projetos abertos ficam normalizados no esquema 6.
 
 Um tirante legado de 600 MPa permanece numérico e serializável, mas aparece como **CA-60 · legado, não suportado no tirante**; o motor interrompe o cálculo como `unsupported`, sem resistências ou combinações dimensionadas. Valores personalizados como 420 MPa também permanecem preservados e não suportados. A troca para CA-25/CA-50 exige escolha explícita; não há conversão por faixa ou arredondamento. A assinatura de cálculo inclui os dois materiais e invalida resultados de entradas diferentes.
 
@@ -121,7 +149,7 @@ Relatório, PDF, desenhos e quadro de aço usam os rótulos centralizados. A pr�
 
 ### Coeficientes dos materiais
 
-Combinação normal: padrões γc = 1,40 e γs = 1,15. Ambos são editáveis **por peça**, entre 1,0 e 2,0, em Cálculo ou em **Configurações > Dimensionamento > Coeficientes dos materiais da peça selecionada**. Projetos antigos sem coeficientes recebem os padrões ao abrir; a migração dos aços para o esquema 5 é descrita acima. Alterar o processo de produção não preenche nem reduz coeficientes automaticamente.
+Combinação normal: padrões γc = 1,40 e γs = 1,15. Ambos são editáveis **por peça**, entre 1,0 e 2,0, em Cálculo ou em **Configurações > Dimensionamento > Coeficientes dos materiais da peça selecionada**. Projetos antigos sem coeficientes recebem os padrões ao abrir; a migração dos aços para o esquema 6 é descrita acima. Alterar o processo de produção não preenche nem reduz coeficientes automaticamente.
 
 Pares de referência adotados exatamente como informados na [issue #2](https://github.com/ricardocorsini/consolo-struct/issues/2), sem acesso aos textos normativos nesta contribuição:
 
@@ -174,7 +202,7 @@ Não há arredondamento intermediário; os números da tabela foram arredondados
 
 **Apenas o limite de `strut`, no modelo de bielas e tirantes, muda.** Sua tensão solicitante e geometria não mudam. Nós (`nodeSupport`), apoio (`bearing`), escoamento prévio (`ductility`, ainda calculado com fcd2/fcd3/fcd1 originais), inclinação (`angleMin`) e verificações complementares de El Debs mantêm seus valores. Atrito-cisalhamento e viga em balanço não usam esse limite: uma escolha compatível com a carga fica registrada, mas não altera as verificações desses modelos nem acrescenta uma conferência de biela que não foi aplicada.
 
-Quando uma alternativa é aplicada à biela, a verificação adicional `strutLimitCriterion` tem estado **`review`**, com o critério, o limite escolhido e o limite do padrão em MPa. Essa conferência não aprova nem reprova por si só; uma falha de outra verificação continua sendo falha. Mesmo que `strut` passe com o limite menos conservador, a pendência `review` permanece, inclusive na sugestão de armaduras. Memória, relatório, PDF e cálculo auditável registram a fórmula escolhida e essa pendência. O campo é salvo no esquema atual **5**; a migração preserva seu valor.
+Quando uma alternativa é aplicada à biela, a verificação adicional `strutLimitCriterion` tem estado **`review`**, com o critério, o limite escolhido e o limite do padrão em MPa. Essa conferência não aprova nem reprova por si só; uma falha de outra verificação continua sendo falha. Mesmo que `strut` passe com o limite menos conservador, a pendência `review` permanece, inclusive na sugestão de armaduras. Memória, relatório, PDF e cálculo auditável registram a fórmula escolhida e essa pendência. O campo foi introduzido no esquema **4** e permanece no esquema **5** atual.
 
 As referências informadas para as alternativas são as indicadas na issue #5 do repositório: NBR 6118 §22.3.2 (`fcd3`) e NBR 9062:2017 §7.3.4.1, alíneas b (`indirect085`) e a (`direct100`). **Essas indicações não foram conferidas no texto normativo nesta contribuição.** Não se afirma equivalência ou aplicabilidade normativa das alternativas; elas exigem avaliação do responsável técnico. Não foram reproduzidos textos de normas.
 
@@ -256,7 +284,7 @@ Cisalhamento pelo Modelo I, desconsiderando a parcela do concreto (`Vc = 0`) nes
 
 - `VRd2 = 0,27 αv2 fcd b d` e `Vsd ≤ VRd2`. Aumentar estribos não resolve essa verificação; a sugestão de armaduras não a contorna.
 - `(asw/s)nec = Vsd/(0,9 d fywd)`, com `fywd = min(fywk/γs; 435)`; `(asw/s)mín = 0,2 (fctm/fywk) b`; adota-se o maior.
-- `Atransv,nec = max((asw/s) L; 0,0015 b h)`, comparada com N3 (estribos fechados, dois ramos) ao longo do comprimento L do consolo.
+- `Atransv,nec = max((asw/s) L; 0,0015 b h)`, comparada com N3 (2 ou 4 ramos efetivos por posição) ao longo do comprimento L do consolo.
 - `smáx = min(0,6d; 300 mm)` se `Vsd ≤ 0,67 VRd2`; senão `smáx = min(0,3d; 200 mm)`. Compara-se o passo real de N3, o mesmo calculado pelo detalhamento (`stirrupLayout`); com um único estribo, compara-se L.
 
 Armadura de face, conforme a altura h junto ao suporte:
@@ -273,7 +301,7 @@ Referências **citadas no GN Corbel e ainda não conferidas** nos textos da ABNT
 - `Vc = 0` para `a/d > 1`; Msd com `h_ap` no braço de Hd (composição conservadora).
 - Pele de 0,10 % b h por face acima de 600 mm; costura abaixo de 600 mm com k = 0,4 sobre a armadura necessária do tirante.
 - Manutenção do piso `H ≥ 0,20 V` de El Debs nesta faixa.
-- `fy` limitado a 435 MPa na flexão; o GN Corbel usa `fyd` sem teto. A diferença aparece quando fyk/γs ultrapassa 435 MPa (por exemplo, CA-50 com γs = 1,10). CA-60 não é calculável como tirante neste programa.
+- `fy` limitado a 435 MPa na flexão; o GN Corbel usa `fyd` sem teto, com diferença quando fyk/γs ultrapassa 435 MPa; CA-60 não é calculável como tirante.
 - Junta de concretagem não monolítica com `a/d > 0,5` em modo automático continua interrompida.
 
 Os casos de referência A, B e C da issue #6 foram reproduzidos executando o motor, com diferença relativa máxima de 4,3×10⁻⁵ (arredondamento dos valores manuais), e estão fixados em `tests/engine.test.ts`.
@@ -294,11 +322,11 @@ O carregamento vertical é centrado no comprimento informado. A altura da linha 
 
 Se `e_ap > c_ap/6`, o motor **interrompe** a solução: não extrapola a distribuição linear para contato que admite descolamento. Não há aumento da resistência por confinamento de área parcialmente carregada. Rigidez, rotação, cisalhamento, escorregamento e resistência do aparelho de apoio são verificações separadas.
 
-Quando a borda lateral do apoio dista da lateral do consolo mais que o cobrimento, há armadura exclusiva de fendilhamento transversal N4, com base no modelo de bloco parcialmente carregado centrado de El Debs:
+Quando a borda lateral do apoio dista da lateral do consolo mais que o cobrimento, há armadura exclusiva de fendilhamento transversal N5, com base no modelo de bloco parcialmente carregado centrado de El Debs:
 
-`Ffend = 0,30 Vd(1−b_eff/b)`; `AsN4 = Ffend/fywd`.
+`Ffend = 0,30 Vd(1−b_eff/b)`; `AsN5 = Ffend/fywd`.
 
-Esse modelo não resolve excentricidade transversal, fendilhamento no plano horizontal da alça nem ancoragem de pinos. Não se conta N4 novamente como N2 ou N3.
+Esse modelo não resolve excentricidade transversal, fendilhamento no plano horizontal da alça nem ancoragem de pinos. Não se conta N5 novamente como N2 ou N3.
 
 ## Armaduras secundárias
 
@@ -314,7 +342,7 @@ Altura da zona superior: `z_cost=2d/3`.
 
 Quantidade mínima: arredondar para cima considerando **dois ramos** por estribo. Além da área, verificar φ ≤ min(b,h)/15, espaçamento ≤ min(100 mm; a_calc) e espaço livre adotado construtivamente para concretagem. O cálculo usa os eixos reais da costura superior: primeira barra abaixo da última camada do tirante, última em d′+2d/3, espaçamento entre eixos (yúltima−yprimeira)/(n−1). O detalhamento e as vistas usam a mesma distribuição. Para uma barra só, o vão tributário adotado é 2d/3. Verifica-se também se a zona comporta a costura. No muito curto, o terço inferior recebe costura mínima adicional.
 
-Para ação direta, N3 ≥ 0,0015bh. Para ação indireta, N5 ≥ Vd/fywd e não se inclui a mesma área em duas famílias. Arranjo e ancoragem dos estribos secundários precisam ser definidos no detalhamento executivo; o desenho esquemático não os certifica.
+Para ação direta, N3 ≥ 0,0015bh. Para ação indireta, N6 ≥ Vd/fywd e não se inclui a mesma área em duas famílias. Arranjo e ancoragem dos estribos secundários precisam ser definidos no detalhamento executivo; o desenho esquemático não os certifica.
 
 ## Ancoragens e geometria
 
@@ -334,7 +362,7 @@ Para ação direta, N3 ≥ 0,0015bh. Para ação indireta, N5 ≥ Vd/fywd e não
   O valor 0,5 vale somente para gancho + barra soldada; barra soldada sozinha é 0,7.
 
 - A barra transversal soldada (`supportWeldedBar`, desligada por padrão) é uma declaração do usuário (§9.4.2.2). O programa não verifica diâmetro, posição nem execução dessa barra e, quando ela é declarada, gera a pendência **Barra transversal soldada na ancoragem** com estado "conferir". Ela não se confunde com a barra transversal soldada da extremidade frontal (`frontAnchor`).
-- A verificação de ancoragem, a memória, o PDF e o cálculo auditável registram α, a razão usada (com ou sem o piso 1,0) e `lb`. Projetos sem os dois campos abrem com ambos desligados, inclusive após a migração dos materiais para o esquema 5.
+- A verificação de ancoragem, a memória, o PDF e o cálculo auditável registram α, a razão usada (com ou sem o piso 1,0) e `lb`. Projetos sem os dois campos abrem com ambos desligados, introduzidos no esquema 4 e preservados no esquema 6.
 - O percurso real do gancho permanece pendente, pois a geometria integral do suporte não é definida.
 - Armadura de confinamento na ancoragem, para as bitolas admitidas no consolo: capacidade ≥25% da força de uma barra (§9.4.2.6.1).
 - Armadura local na face do suporte ≥área efetiva do tirante (§7.3.3.14). Não é dimensionamento do pilar.
@@ -355,7 +383,7 @@ Opção por peça (`excessConcrete`, padrão `keep`), em Configurações > Dimen
 - A nova face inferior é `min(face original; max(y(x); h₂))`: segue a face original junto ao suporte, a face inferior da biela no trecho intermediário e a horizontal em h₂ até a ponta. h, h₂, L, a, o tirante, as alças e a ancoragem no suporte não mudam.
 - Não há recorte quando a biela não fica abaixo da face original (`tanθ ≤ (h−h₂)/L` ou `y(L) ≥ h₂`), inclusive em consolos retangulares (h₂ = h), nem em atrito-cisalhamento ou viga em balanço. Nesses casos a geometria original é mantida e a memória registra a nota `excessConcrete` com estado `na`.
 - Com recorte aplicado, a nota `excessConcrete` tem estado `review` e informa ângulo e largura da biela, os vértices da face inferior e a área removida. As verificações usam as mesmas dimensões; o peso próprio automático e seu centroide passam a usar a seção recortada.
-- Estribos verticais, costuras e porta-estribos seguem a face recortada com o mesmo cobrimento (distância mínima à poligonal da face). Desenhos, modelo 3D, DXF/SVG e quantitativos de volume usam o mesmo perfil.
+- Estribos verticais, costuras e N4 construtiva seguem a face recortada com o mesmo cobrimento (distância mínima à poligonal da face). Desenhos, modelo 3D, DXF/SVG e quantitativos de volume usam o mesmo perfil.
 
 ### Detalhamento “Armado como viga”
 
@@ -363,7 +391,7 @@ Opção de detalhamento por peça (`detailing.barArrangement`, padrão `consolo`
 
 - Não altera o cálculo: o modelo, as verificações e o resultado são os mesmos do modo `consolo`, inclusive o tipo de ancoragem frontal declarado no cálculo.
 - Tirante (negativa): na primeira camada, barra superior de `x = −(P − c − φ/2)` a `x = L − c − φ/2`, com dobras de 90° (mandril da tabela 9.1) descendo no suporte e na ponta. A perna reta de cada extremidade é `max(8φ; lb,nec − trecho reto − arco)`, com `lb,nec = max(α·lb·razão; 0,3lb; 10φ; 100)`, usando `lb` e a razão do motor (inclusive o piso opcional). O α é 0,7 apenas com cobrimento lateral ≥ 3φ; caso contrário, 1,0. Não se aplica desconto pela declaração de barra soldada no cálculo, pois essa barra não é detalhada neste modo (NBR 6118:2026 §9.4.2.5). As pernas de camadas sucessivas são aninhadas, sem eixos coincidentes. No suporte o trecho reto conta a partir da face do pilar; na ponta, a partir da borda interna da placa de apoio (`a − ℓplaca/2`). A perna da ponta termina acima da face inferior com cobrimento, e a do suporte dentro da altura h.
-- Positiva: `n` barras inferiores de bitola φp (padrão 2 × 10 mm) a `c + φestribo + φp/2` da face inferior, seguindo a face inclinada, por dentro das pernas do tirante, com dobras subindo nas duas extremidades até abaixo da última camada do tirante. `lb,nec,p = max(α·lb,p; 0,3lb,p; 10φp; 100)`, com `lb,p = lb·φp/φ` e α = 0,7 quando o cobrimento lateral ≥ 3φp (senão 1,0). Não é computada como armadura resistente e substitui o porta-estribos. A dobra frontal acompanha o ângulo entre o trecho inferior inclinado e a perna vertical, com arco e ponta reta medidos nesse percurso. As pontas ficam abaixo da última camada do tirante; a quantidade deve caber na largura com espaço livre ≥ max(20; φp; 1,2dag).
+- Positiva: `n` barras inferiores de bitola φp (padrão 2 × 10 mm) a `c + φestribo + φp/2` da face inferior, seguindo a face inclinada, por dentro das pernas do tirante, com dobras subindo nas duas extremidades até abaixo da última camada do tirante. `lb,nec,p = max(α·lb,p; 0,3lb,p; 10φp; 100)`, com `lb,p = lb·φp/φ` e α = 0,7 quando o cobrimento lateral ≥ 3φp (senão 1,0). Não é computada como armadura resistente. É uma família independente P1; N4 permanece obrigatória e interferências entre elas geram pendência impeditiva. A dobra frontal acompanha o ângulo entre o trecho inferior inclinado e a perna vertical, com arco e ponta reta medidos nesse percurso. As pontas ficam abaixo da última camada do tirante; a quantidade deve caber na largura com espaço livre ≥ max(20; φp; 1,2dag).
 - Quando a perna necessária não cabe, a perna é limitada ao contorno e o detalhamento registra `beam-top-anchor` (impeditiva) ou `beam-bottom-anchor` (conferir). Em todos os casos registra `beam-review`, porque a NBR 9062 §7.3.3.6–7 prevê alça ou barra transversal soldada na ponta de consolos.
 
 ## Durabilidade
@@ -380,7 +408,7 @@ Permanecem externos: ELS e fissuração; dentes Gerber; consolos duplos, contín
 
 ## Arquivos e auditoria
 
-- `.consolo.json` (e extensão legada `.lume.json`): entradas editáveis no esquema 5; migra esquemas 1–4. O esquema 1 recebe parâmetros de cálculo não conferidos. Quantidades antigas eram ilustrativas e precisam ser revistas, especialmente a contagem de estribos.
+- `.consolo.json`/`.lume.json`, esquema 6: entradas editáveis. Importa esquemas 1–5. Os esquemas 1–4 recebem dois ramos N3 e N4 Ø8; o esquema 5 preserva ramos e bitola já definidos. Move o aço secundário de `design` para `materials`, sem converter valores do tirante. O campo secundário é obrigatório no esquema 6; duplicações divergentes e campos na localização antiga são rejeitados antes de trocar o projeto. Mantém os dados de fendilhamento/suspensão, política γn e detalhamento. O esquema 1 mantém os dados novos não conferidos.
 - `.calc.json`: snapshot completo das entradas, unidades, versão, política, todas as combinações, resultados intermediários e verificações. Não é um projeto editável e não é tratado como resultado confiável ao importar `.lume.json`.
 - PDF: entradas, hipóteses, referências, envelope, memória de cada combinação e apêndice integral de entradas; usa transliteração dos símbolos para evitar caracteres gregos quebrados no PDF.
 - CSV: quantidades e resumo de ELU recalculado. Não é lista de corte.

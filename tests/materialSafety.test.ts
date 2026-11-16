@@ -1,3 +1,5 @@
+import { legacyN4Labels } from "./reference/legacy-n4-labels";
+import { legacySteelContract } from "./reference/legacy-steel-contract";
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { designSchema } from "../src/domain/design";
@@ -16,29 +18,30 @@ import { shortFixture, cantileverFixture } from "./fixtures";
 import { suggestReinforcement } from "../src/domain/autodesign";
 
 describe("Coeficientes dos materiais — resistências em MPa", () => {
-  // Snapshots atualizados para o contrato de materiais do esquema 5 (#35).
-  // Mantém-se a normalização histórica dos metadados e do texto de ancoragem.
+  // Resultados completos capturados antes desta alteração, no upstream 41c3a12.
+  // A fixture mantém campos posteriores ausentes e normaliza os rótulos de N4,
+  // além dos metadados de coeficientes/ancoragem já normalizados anteriormente.
   it.each([
     [
       "friction",
       20,
       0.35,
-      "b1c45b15c0b9852f98882316938f29390d19e75b7742778600f3110614c2ae9f",
+      "fa3190efa43d06c3db1eed2c520985647cff162750f8cbed81b04c9a23d7e037",
     ],
     [
       "strut",
       30,
       0.7,
-      "8d8a68dfdc4c4aa3ad142066b34381eeb7a25597e3e5f04c2ef307a67138abd6",
+      "8ca893ef323d153dbe7563e4777e006fc0e6352de74bdbcc80814f92b3b7adde",
     ],
     [
       "beam",
       30,
       0,
-      "2f2c490349a297a50984a17e3b68b4c3d3816a3034bf44b739661a15736cecb5",
+      "cb86344a673ccde3276b853c8424d657aab27c32a582b5bc995cc8494ceca6bf",
     ],
   ] as const)(
-    "fixa o resultado no esquema 5 para %s com os padrões",
+    "mantém o resultado completo anterior para %s com os padrões",
     (method, fck, ratio, expected) => {
       const p = method === "beam" ? cantileverFixture() : shortFixture();
       if (method !== "beam") {
@@ -47,8 +50,13 @@ describe("Coeficientes dos materiais — resistências em MPa", () => {
         p.geometry.length = p.geometry.loadOffset + 90;
       }
       const legacy = JSON.parse(JSON.stringify(p));
+      delete legacy.rebar.stirrupBranches;
+      delete legacy.rebar.constructiveDiameter;
       delete legacy.design.gammaC;
       delete legacy.design.gammaS;
+      // Complete snapshots captured before the opt-in gamma-n policy.
+      delete legacy.design.gammaNPolicy;
+      delete legacy.design.gammaNJustification;
       // Projeto anterior ao recorte: campo ausente, sem normalizar o fingerprint.
       delete legacy.design.excessConcrete;
       // Issue #12: options off by default; only metadata and the anchorage
@@ -64,17 +72,19 @@ describe("Coeficientes dos materiais — resistências em MPa", () => {
         "anchorRatioFloor",
         "anchorWeldedBar",
       ]);
-      const raw = JSON.stringify(calculate(legacy), (key, value) =>
-        metadata.has(key)
-          ? undefined
-          : value?.id === "anchorage"
-            ? {
-                ...value,
-                formula:
-                  "lb=max(φfyd/(4fbd);25φ); lb,nec=max(αlb As,calc/As,ef;0,3lb;10φ;100)",
-                detail: value.detail.replace(/α = .*lb = [\d.,]+ mm\./, ""),
-              }
-            : value,
+      const raw = JSON.stringify(
+        legacyN4Labels(legacySteelContract(calculate(legacy))),
+        (key, value) =>
+          metadata.has(key)
+            ? undefined
+            : value?.id === "anchorage"
+              ? {
+                  ...value,
+                  formula:
+                    "lb=max(φfyd/(4fbd);25φ); lb,nec=max(αlb As,calc/As,ef;0,3lb;10φ;100)",
+                  detail: value.detail.replace(/α = .*lb = [\d.,]+ mm\./, ""),
+                }
+              : value,
       );
       expect(createHash("sha256").update(raw).digest("hex")).toBe(expected);
     },

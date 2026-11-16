@@ -20,6 +20,8 @@ export const rebarSchema = z.object({
   stitchDiameter: z.number().min(5).max(25),
   stirrupCount: z.number().int().min(1).max(100),
   stirrupDiameter: z.number().min(5).max(25),
+  stirrupBranches: z.union([z.literal(2), z.literal(4)]).default(2),
+  constructiveDiameter: z.number().finite().min(5).max(25).default(8),
 });
 export const pieceSchema = z.object({
   id: z.string().min(1).max(80),
@@ -34,11 +36,9 @@ export const pieceSchema = z.object({
   }),
   materials: z.object({
     fck: z.number().min(20).max(90),
-    // Numeric legacy values remain serializable; the engine restricts tie eligibility.
+    // Preserve numeric legacy tie values; the engine checks class eligibility.
     fyk: z.number().min(250).max(600),
-    fykTransverse: z
-      .union([z.literal(250), z.literal(500), z.literal(600)])
-      .default(500),
+    fykTransverse: z.union([z.literal(250), z.literal(500), z.literal(600)]),
   }),
   rebar: rebarSchema,
   design: designSchema,
@@ -46,7 +46,7 @@ export const pieceSchema = z.object({
 });
 export const projectSchema = z.object({
   format: z.literal("lumeconsolo"),
-  schemaVersion: z.literal(5),
+  schemaVersion: z.literal(6),
   name: z.string().min(1).max(120),
   client: z.string().max(120),
   author: z.string().max(120),
@@ -140,6 +140,8 @@ export function newPiece(index: number): Piece {
       stitchDiameter: 6.3,
       stirrupCount: 5,
       stirrupDiameter: 6.3,
+      stirrupBranches: 2,
+      constructiveDiameter: 8,
     },
   };
 }
@@ -163,11 +165,58 @@ export function exampleProject(): Project {
   second.rebar.tieDiameter = 16;
   return {
     format: "lumeconsolo",
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: "Pavilhão Horizonte",
     client: "Projeto de demonstração",
     author: "",
     pieces: [first, second],
+  };
+}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Capture the old material before schema 1 resets illustrative design data. */
+function migrateSecondarySteel(data: unknown): unknown {
+  if (
+    !isRecord(data) ||
+    ![1, 2, 3, 4, 5].includes(data.schemaVersion as number) ||
+    !Array.isArray(data.pieces)
+  )
+    return data;
+  return {
+    ...data,
+    pieces: data.pieces.map((p: unknown) => {
+      if (!isRecord(p) || !isRecord(p.materials)) return p;
+      const design = isRecord(p.design) ? p.design : undefined;
+      const oldValue = design && Object.hasOwn(design, "fykTransverse");
+      const newValue = Object.hasOwn(p.materials, "fykTransverse");
+      if (
+        oldValue &&
+        newValue &&
+        design.fykTransverse !== p.materials.fykTransverse
+      )
+        throw new Error(
+          "Projeto inválido: os aços secundários em Cálculo e Materiais divergem. Confira os valores no arquivo antes de abrir; nenhuma classe foi escolhida automaticamente.",
+        );
+      return {
+        ...p,
+        materials: {
+          ...p.materials,
+          fykTransverse: oldValue
+            ? design.fykTransverse
+            : newValue
+              ? p.materials.fykTransverse
+              : 500,
+        },
+        ...(design
+          ? {
+              design: Object.fromEntries(
+                Object.entries(design).filter(([k]) => k !== "fykTransverse"),
+              ),
+            }
+          : {}),
+      };
+    }),
   };
 }
 export function decodeProject(text: string): Project {
@@ -179,52 +228,7 @@ export function decodeProject(text: string): Project {
   } catch {
     throw new Error("O arquivo não contém um JSON válido.");
   }
-  // Move the legacy steel before the v1 design reset so its chosen value survives.
-  if (
-    data &&
-    typeof data === "object" &&
-    "schemaVersion" in data &&
-    [1, 2, 3, 4].includes(Number(data.schemaVersion)) &&
-    "pieces" in data &&
-    Array.isArray(data.pieces)
-  ) {
-    data = {
-      ...data,
-      pieces: data.pieces.map((p: unknown) => {
-        if (
-          !p ||
-          typeof p !== "object" ||
-          !("materials" in p) ||
-          !p.materials ||
-          typeof p.materials !== "object"
-        )
-          return p;
-        const design =
-          "design" in p && p.design && typeof p.design === "object"
-            ? p.design
-            : undefined;
-        const secondary =
-          design && "fykTransverse" in design
-            ? design.fykTransverse
-            : "fykTransverse" in p.materials
-              ? p.materials.fykTransverse
-              : 500;
-        return {
-          ...p,
-          materials: { ...p.materials, fykTransverse: secondary },
-          ...(design
-            ? {
-                design: Object.fromEntries(
-                  Object.entries(design).filter(
-                    ([key]) => key !== "fykTransverse",
-                  ),
-                ),
-              }
-            : {}),
-        };
-      }),
-    };
-  }
+  data = migrateSecondarySteel(data);
   // Version 1 carried illustrative bars only. New engineering data must be reviewed.
   if (
     data &&
@@ -243,12 +247,27 @@ export function decodeProject(text: string): Project {
         if (!g.success) return p;
         return {
           ...p,
-          design: defaultDesign(
-            g.data.width,
-            g.data.length,
-            g.data.columnWidth,
-            g.data.cover,
-          ),
+          design: {
+            ...defaultDesign(
+              g.data.width,
+              g.data.length,
+              g.data.columnWidth,
+              g.data.cover,
+            ),
+            // Preserve semantic special reinforcement if a v1 producer supplied it.
+            ...("design" in p && p.design && typeof p.design === "object"
+              ? Object.fromEntries(
+                  Object.entries(p.design).filter(([key]) =>
+                    [
+                      "splittingCount",
+                      "splittingDiameter",
+                      "suspensionCount",
+                      "suspensionDiameter",
+                    ].includes(key),
+                  ),
+                )
+              : {}),
+          },
         };
       }),
     };
@@ -280,17 +299,58 @@ export function decodeProject(text: string): Project {
   ) {
     data = { ...data, schemaVersion: 4 };
   }
+  // N4 is mandatory in schema 5; obsolete mounting choices cannot suppress it.
   if (
     data &&
     typeof data === "object" &&
     "schemaVersion" in data &&
-    data.schemaVersion === 4
+    data.schemaVersion === 4 &&
+    "pieces" in data &&
+    Array.isArray(data.pieces)
+  ) {
+    data = {
+      ...data,
+      schemaVersion: 5,
+      pieces: data.pieces.map((p: unknown) =>
+        p &&
+        typeof p === "object" &&
+        "rebar" in p &&
+        p.rebar &&
+        typeof p.rebar === "object"
+          ? {
+              ...p,
+              rebar: {
+                ...p.rebar,
+                stirrupBranches: 2,
+                constructiveDiameter: 8,
+              },
+            }
+          : p,
+      ),
+    };
+  }
+  // Schema 5 already belongs to N4; steel separation has a distinct schema 6.
+  if (isRecord(data) && data.schemaVersion === 5)
+    data = { ...data, schemaVersion: 6 };
+  // Do not let Zod silently strip a misplaced material from a canonical file.
+  if (
+    isRecord(data) &&
+    data.schemaVersion === 6 &&
+    Array.isArray(data.pieces) &&
+    data.pieces.some(
+      (p) =>
+        isRecord(p) &&
+        isRecord(p.design) &&
+        Object.hasOwn(p.design, "fykTransverse"),
+    )
   )
-    data = { ...data, schemaVersion: 5 };
+    throw new Error(
+      "Projeto inválido: no esquema 6 o aço secundário deve estar em materials.fykTransverse, sem duplicação em design.",
+    );
   const parsed = projectSchema.safeParse(data);
   if (!parsed.success)
     throw new Error(
-      "Projeto inválido ou versão não suportada. Use um arquivo .lume.json compatível (esquemas 1, 2, 3, 4 ou 5).",
+      "Projeto inválido ou versão não suportada. Use um arquivo .lume.json compatível (esquemas 1, 2, 3, 4, 5 ou 6).",
     );
   return parsed.data;
 }

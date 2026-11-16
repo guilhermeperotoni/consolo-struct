@@ -1,3 +1,29 @@
+# Validação — integração dos aços separados (#44 / #35)
+
+## Contrato integrado
+
+Base da integração: master `afec1f3`. Preserva o commit e a autoria de Pedro Felipe Oliveira, além de N3/N3G/N4, política γn e projeções de pinos/solda integradas anteriormente.
+
+O formato ativo é **esquema 6**: o esquema 5 já pertence a N4. Migra 1–5 capturando o aço secundário antes da reposição dos parâmetros ilustrativos v1. Preserva ramos/bitola de N4 do esquema 5, política γn, detalhamento e o tirante numérico, inclusive CA-60 legado não suportado no cálculo. Classes divergentes nas duas localizações são rejeitadas; o esquema 6 exige `materials.fykTransverse` e rejeita o campo antigo em `design`. A abertura inválida não pode substituir o projeto atual.
+
+Materiais oferece tirante CA-25/CA-50 e secundárias CA-25/CA-50/CA-60. O motor **0.5.0** identifica a nova elegibilidade e a adoção de `min(fyk/γs; 435 MPa)` também na ancoragem. Fórmulas, classes e teto seguem a decisão confirmada na issue #35; esta revisão não acrescenta uma nova regra normativa nem confirma os textos da ABNT. As hipóteses/pendências existentes de aderência, solda, produção e detalhamento permanecem aplicáveis.
+
+## Verificação da integração
+
+- Local: `npm run check` passou com **412 testes em 22 arquivos**. Inclui migração 1–5, preservação de N4/γn/ligações, reabertura, campos ausentes/duplicados e bloqueio do CA-60 no tirante.
+- Comparação direta com a master `afec1f3`: **108 cenários padrão** (bielas/atrito/viga × C20/C30/C60 × três processos de produção × dois modos de forças × complementos ligados/desligados), CA-50/CA-50 e γs=1,15. Valores, estados, demandas, capacidades, combinações, referências/detalhes das verificações, barras completas, massas e pendências idênticos. Exclui da comparação a assinatura/localização da entrada, o identificador do motor e somente o texto da fórmula N2 que passou a dizer fywd.
+- Os **50 testes históricos de γn e coeficientes** continuam passando. Um helper restrito a CA-50/CA-50 e γs=1,15 reconstrói somente assinatura, identificador histórico do motor e texto da fórmula; nenhum número, estado ou verificação é descartado. Os hashes novos de paridade foram capturados no checkout separado da master.
+- As expectativas de ancoragem continuam explícitas. Snapshots completos de CA-25/CA-50 refletem o contrato 6 e os metadados N4/γn atuais. Demandas de secundárias por força e ancoragem com γs=1,10 têm testes numéricos próprios; não são apresentadas como invariantes.
+- Interface: suíte completa na CI, incluindo os testes de aços e um cenário adicional de esquema 5/N4/γn, histórico, rejeição atômica de arquivo 6 incompleto e reabertura. As capturas do código integrado ficam nos artefatos da execução; os resultados finais estão no PR de integração.
+- Chromium local indisponível (download truncado); validação de navegador feita pela CI. Sem alteração nativa Tauri; instalação nativa não testada.
+
+## Registro original da contribuição
+
+O texto a seguir documenta a branch isolada na base `fa8c890`, seu esquema 5 experimental e as validações anteriores à integração. Seus limites de compatibilidade são históricos; para o contrato integrado vale a seção acima.
+
+<details>
+<summary>Relatório original e capturas da base anterior</summary>
+
 # Validação — aços separados por função (issue #35)
 
 Contribuição para [a issue #35](https://github.com/ricardocorsini/consolo-struct/issues/35), na branch `feat/separate-steel-materials`. Base: `fa8c8908f58ce05ccd5bfc17ba123045da166a54`, master do original. O fork `PFelipe23/consolo-struct` foi sincronizado antes da implementação. A entrega é um commit no fork; o PR será aberto manualmente pelo autor.
@@ -99,3 +125,5 @@ Cada peça passa a editar os dois aços em Materiais, com tirante CA-25/CA-50 e 
 Validação: formatação, 309 testes unitários, build e 79 testes de interface aprovados. Comparação com a base em 108 cenários padrão e nas 11 peças oficiais preservou valores e estados. Tauri, conferência dos textos normativos e revisão humana independente não executados. Conciliar o esquema 5 do PR #41 e o uso de fyd no PR #43 antes de integrar essas contribuições juntas.
 
 Closes #35
+
+</details>

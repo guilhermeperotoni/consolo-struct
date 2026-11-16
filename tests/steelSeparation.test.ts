@@ -18,7 +18,7 @@ import { pieceDrawing } from "../src/detailing/drawing";
 import { drawingSvg, steelCsv } from "../src/detailing/exports";
 import { shortFixture, cantileverFixture } from "./fixtures";
 
-describe("Separação dos aços e migração para esquema 5 (#35)", () => {
+describe("Separação dos aços e migração para esquema 6 (#35)", () => {
   it("oferece classes por função, com padrão CA-50 em ambas", () => {
     expect(tieSteelClasses).toEqual(["CA-25", "CA-50"]);
     expect(secondarySteelClasses).toEqual(["CA-25", "CA-50", "CA-60"]);
@@ -30,10 +30,10 @@ describe("Separação dos aços e migração para esquema 5 (#35)", () => {
       fykTransverse: 500,
     });
     expect(newPiece(1).design).not.toHaveProperty("fykTransverse");
-    expect(exampleProject().schemaVersion).toBe(5);
+    expect(exampleProject().schemaVersion).toBe(6);
   });
 
-  it.each([1, 2, 3, 4])(
+  it.each([1, 2, 3, 4, 5])(
     "migra esquema %s sem perder aços, inclusive antes do reset v1",
     (schemaVersion) => {
       for (const fykTransverse of [500, 600]) {
@@ -47,7 +47,7 @@ describe("Separação dos aços e migração para esquema 5 (#35)", () => {
         const untouched = structuredClone(raw);
         const migrated = decodeProject(JSON.stringify(raw));
         expect(raw).toEqual(untouched);
-        expect(migrated.schemaVersion).toBe(5);
+        expect(migrated.schemaVersion).toBe(6);
         for (const [i, p] of migrated.pieces.entries()) {
           expect(p.materials).toEqual({
             fck: raw.pieces[i].materials.fck,
@@ -120,6 +120,52 @@ describe("Separação dos aços e migração para esquema 5 (#35)", () => {
     expect(() =>
       decodeProject(JSON.stringify({ ...exampleProject(), schemaVersion: 99 })),
     ).toThrow("versão não suportada");
+  });
+
+  it("migra o esquema 5 de N4 sem perder ramos, bitola, política ou ligações", () => {
+    const raw = JSON.parse(JSON.stringify(exampleProject()));
+    raw.schemaVersion = 5;
+    const p = raw.pieces[0];
+    p.rebar.stirrupBranches = 4;
+    p.rebar.constructiveDiameter = 12.5;
+    p.detailing.barArrangement = "beam";
+    p.detailing.pins = 3;
+    p.design.gammaNPolicy = "table9062";
+    p.design.gammaNJustification =
+      "Premissas mantidas na migração dos materiais.";
+    delete p.materials.fykTransverse;
+    p.design.fykTransverse = 600;
+    const decoded = decodeProject(JSON.stringify(raw));
+    expect(decoded.schemaVersion).toBe(6);
+    expect(decoded.pieces[0].materials.fykTransverse).toBe(600);
+    expect(decoded.pieces[0].rebar).toEqual(p.rebar);
+    expect(decoded.pieces[0].detailing).toEqual(p.detailing);
+    const { fykTransverse: _old, ...design } = p.design;
+    expect(decoded.pieces[0].design).toEqual(design);
+    expect(decodeProject(JSON.stringify(decoded))).toEqual(decoded);
+  });
+
+  it("rejeita materiais divergentes sem escolher uma classe implicitamente", () => {
+    const raw = JSON.parse(JSON.stringify(exampleProject()));
+    raw.schemaVersion = 5;
+    raw.pieces[0].design.fykTransverse = 600;
+    expect(() => decodeProject(JSON.stringify(raw))).toThrow("divergem");
+    raw.pieces[0].materials.fykTransverse = 600;
+    const p = decodeProject(JSON.stringify(raw)).pieces[0];
+    expect(p.materials.fykTransverse).toBe(600);
+    expect(p.design).not.toHaveProperty("fykTransverse");
+  });
+
+  it("o esquema 6 exige a classe em Materiais e rejeita o campo antigo", () => {
+    const raw = JSON.parse(JSON.stringify(exampleProject()));
+    delete raw.pieces[0].materials.fykTransverse;
+    expect(() => decodeProject(JSON.stringify(raw))).toThrow(
+      "Projeto inválido",
+    );
+    expect(calculate(raw.pieces[0]).status).toBe("invalid");
+    raw.pieces[0].materials.fykTransverse = 500;
+    raw.pieces[0].design.fykTransverse = 500;
+    expect(() => decodeProject(JSON.stringify(raw))).toThrow("esquema 6");
   });
 });
 
@@ -243,19 +289,19 @@ describe("Resistências por família e ancoragem limitada", () => {
   });
 });
 
-describe("Regressão numérica contra master fa8c890 antes da migração", () => {
+describe("Regressão numérica contra master afec1f3 antes da migração", () => {
   it.each([
     [
       "strut",
-      "f48fee40adf60e8891b61ef6d67071601b724645ca5b2ef1ef9c14b8dfb8b50d",
+      "ecf1de8a976377dc6a3ae031ecc19d86648fbb541b6d521cc35602f382073602",
     ],
     [
       "friction",
-      "48a1efe7304e7a211fc974981b5e3907fa4f75f41270d207161c390824847976",
+      "60bc3c1c76e1d01b7955d7fb85f1ee781ef87d9fa4d049f7345b178c1d79c13a",
     ],
     [
       "beam",
-      "72c15d105cd1d62a3ebc8da5bc98778394c61fc249b03adb4660c29aac7d0b86",
+      "6e1539c67adbd29d9da35c01b5499f7eba7951c2195a1aec2767c1ed7ba8ec04",
     ],
   ] as const)(
     "preserva todos os valores, estados e verificações de %s com CA-50/CA-50 e γs=1,15",
@@ -263,7 +309,7 @@ describe("Regressão numérica contra master fa8c890 antes da migração", () =>
       const p = method === "beam" ? cantileverFixture() : shortFixture();
       if (method !== "beam") p.design.method = method;
       if (method === "friction") p.geometry.loadOffset = 120;
-      // Hash capturado na master original, antes da implementação da issue #35.
+      // Hash capturado na master afec1f3 (antes desta integração), antes da implementação da issue #35.
       // Exclui a assinatura (contrato mudou) e apenas o texto das fórmulas.
       // Demandas, capacidades, referências, detalhes e estados continuam incluídos.
       const r = calculate(p);
