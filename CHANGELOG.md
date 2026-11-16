@@ -4,6 +4,9 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra a contribuição de @guilhermeperotoni na PR #46, preservando os commits originais. Corrige a detecção do Launcher Linux nas pastas por versão e a exclusividade do pacote entre download e instalação, incluindo a transferência da proteção ao instalador Windows.
+- Verifica atualizações ao abrir o aplicativo, inclusive por atalho e sem o Struct Launcher (issue #45). A consulta usa o catálogo assinado do OpenStruct (Ed25519, chaves fixadas), seleciona só versões estáveis mais novas do `consolostruct` com pacote assinado para o sistema, e mostra versão em execução, oferecida e novidades com Atualizar e Agora não. Nada é baixado, instalado ou reiniciado sem ação explícita; o trabalho é protegido antes do reinício. Instalações do Launcher são encaminhadas a ele; NSIS e AppImage independentes se atualizam no lugar; .deb e executáveis avulsos recebem o caminho seguro. Veja [docs/ATUALIZACOES.md](docs/ATUALIZACOES.md).
+
 - Integra o PR #44 com N3/N4 e γn atuais. Separa em Materiais o aço do tirante (CA-25/CA-50) e das secundárias (CA-25/CA-50/CA-60). O esquema 6 migra 1–5 sem perder N4, mantém CA-60 legado salvo e não suportado no tirante, e rejeita classes divergentes ou secundárias ausentes no formato novo.
 - Identifica o motor 0.5.0: aplica as resistências por família e o teto de 435 MPa também à ancoragem, conforme decisão da issue #35. Os casos padrão CA-50/CA-50 com γs=1,15 mantêm os resultados; memória, PDF e auditoria mostram as resistências adotadas.
 

@@ -52,6 +52,11 @@ import DocumentTabs from "./components/DocumentTabs";
 import QuantityEditor from "./components/QuantityEditor";
 import MemoryPage from "./components/MemoryPage";
 import BrandSignature from "./components/BrandSignature";
+import UpdatePanel, {
+  UpdateStatus,
+  useUpdater,
+  type PrepareRestart,
+} from "./components/UpdatePanel";
 import {
   documentReducer,
   initialDocuments,
@@ -333,18 +338,50 @@ export default function App() {
           "application/json",
           "json",
         )
-      )
+      ) {
         notify(
           "Projeto exportado. O arquivo pode ser reaberto no ConsoloStruct.",
         );
+        return true;
+      }
     } catch {
       notify("Não foi possível salvar o arquivo. Tente outra pasta.");
     }
+    return false;
   }, [project, notify]);
+  // Antes de reiniciar para atualizar: nenhuma exportação em curso, rascunho gravado e,
+  // se pedido, o arquivo salvo. Cancelar ou falhar ao salvar impede o reinício.
+  const prepareRestart = useCallback<PrepareRestart>(
+    async (withFile) => {
+      if (saving)
+        return "Aguarde a exportação em andamento terminar antes de reiniciar.";
+      if (withFile && !(await saveProject()))
+        return "O projeto não foi salvo; o reinício foi cancelado.";
+      if (!hasEdited.current) return null;
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(project));
+        setStorageError(false);
+        return null;
+      } catch {
+        setStorageError(true);
+        return withFile
+          ? null
+          : "Não foi possível guardar o rascunho neste dispositivo. Use Salvar projeto e reiniciar.";
+      }
+    },
+    [saving, saveProject, project],
+  );
+  const updater = useUpdater(notify, prepareRestart);
+  const restartLock = useRef(false);
+  restartLock.current = updater.documentLocked;
   const saveRef = useRef(saveProject);
   saveRef.current = saveProject;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (restartLock.current) {
+        e.preventDefault();
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const editable =
         e.target instanceof HTMLElement &&
@@ -640,6 +677,9 @@ export default function App() {
       case "theme":
         setTheme(theme === "light" ? "dark" : "light");
         break;
+      case "updates":
+        void updater.check(true);
+        break;
       case "pieces":
       case "report":
       case "details":
@@ -648,7 +688,11 @@ export default function App() {
     }
   };
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      inert={updater.documentLocked}
+      aria-busy={updater.documentLocked}
+    >
       <input
         type="file"
         accept=".json"
@@ -1128,6 +1172,7 @@ export default function App() {
         <span className="status-prototype">
           Motor ELU {ENGINE_VERSION} · hipóteses e limites na memória
         </span>
+        <UpdateStatus updater={updater} />
         <span className="status-view">
           {page === "workspace" ? `${Math.round(zoom * 100)}%` : "Documento"}
           <span className="status-divider">|</span>cm · kN · MPa
@@ -1593,6 +1638,7 @@ export default function App() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      <UpdatePanel updater={updater} />
       {toast && (
         <div className="toast" role="status">
           <Info size={17} />
