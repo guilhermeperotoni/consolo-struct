@@ -66,6 +66,7 @@ export function useUpdater(
   const [state, dispatch] = useReducer(updateReducer, { phase: "idle" });
   const [visible, setVisible] = useState(false);
   const [notice, setNotice] = useState("");
+  const [preparingRestart, setPreparingRestart] = useState(false);
   const stateRef = useRef<UpdateState>(state);
   stateRef.current = state;
   const busy = useRef(false);
@@ -173,6 +174,7 @@ export function useUpdater(
       if (busy.current || current.phase !== "confirm" || !current.report.offer)
         return;
       busy.current = true;
+      setPreparingRestart(true);
       setNotice("");
       try {
         const blocked = await prepareRestart(saveFile);
@@ -192,6 +194,7 @@ export function useUpdater(
         store(pendingKey, null);
         dispatch({ type: "failed", error: asUpdateError(error) });
       } finally {
+        setPreparingRestart(false);
         busy.current = false;
       }
     },
@@ -214,6 +217,7 @@ export function useUpdater(
     state,
     visible,
     notice,
+    documentLocked: preparingRestart || state.phase === "applying",
     open: () => setVisible(true),
     close: later,
     check,

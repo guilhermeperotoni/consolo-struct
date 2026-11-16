@@ -372,10 +372,16 @@ export default function App() {
     [saving, saveProject, project],
   );
   const updater = useUpdater(notify, prepareRestart);
+  const restartLock = useRef(false);
+  restartLock.current = updater.documentLocked;
   const saveRef = useRef(saveProject);
   saveRef.current = saveProject;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (restartLock.current) {
+        e.preventDefault();
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const editable =
         e.target instanceof HTMLElement &&
@@ -682,7 +688,11 @@ export default function App() {
     }
   };
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      inert={updater.documentLocked}
+      aria-busy={updater.documentLocked}
+    >
       <input
         type="file"
         accept=".json"

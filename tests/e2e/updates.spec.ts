@@ -155,6 +155,11 @@ test("Atualizar inicia um único download e só reinicia após proteger o trabal
 }) => {
   await desktop(page, { check: available });
   await page.goto("/");
+  const length = page
+    .locator(".inspector")
+    .getByLabel("Comprimento", { exact: false });
+  await length.fill("32,5");
+  await length.press("Enter");
   const update = panel(page).getByRole("button", {
     name: "Atualizar",
     exact: true,
@@ -184,6 +189,18 @@ test("Atualizar inicia um único download e só reinicia após proteger o trabal
     JSON.parse(localStorage.getItem("consolostruct.update.pending")!),
   );
   expect(pending).toMatchObject({ from: "0.7.1", to: "0.8.0", mode: "nsis" });
+  await expect(page.locator(".app-shell")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Control+z");
+  await expect(length).toHaveValue("32,5");
+  await page.keyboard.press("Control+s");
+  expect(await calls(page)).not.toContain("plugin:dialog|save");
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem("consolostruct.project.v1")!).pieces[0]
+          .geometry.length,
+    ),
+  ).toBe(325);
 });
 
 test("falha de download é explicada e mantém a versão atual", async ({
@@ -243,6 +260,10 @@ for (const saveFile of [false, true])
     );
     expect(await calls(page)).not.toContain("update_apply");
     await expect(panel(page)).toContainText("Antes de reiniciar");
+    await expect(page.locator(".app-shell")).not.toHaveAttribute("inert");
+    await expect(
+      page.locator(".inspector").getByLabel("Comprimento", { exact: false }),
+    ).toBeEditable();
   });
 
 test("offline na consulta automática não interrompe nem diz atualizado", async ({
