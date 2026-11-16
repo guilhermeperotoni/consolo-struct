@@ -14,12 +14,23 @@ O complemento que permanece necessário é a projeção dos pinos de ligação e
 ## Verificação da integração
 
 - `npm run check`: 379 testes unitários, incluindo 15 de projeção. Cobrem 1–20 pinos, 1–4 camadas, camadas vazias, ausência de comprimento, consolo/viga, recorte, dois/quatro ramos, marcas, persistência e ausência de cálculo ELU na projeção.
-- Comparação direta com `master` 057eec7 em 64 combinações: entradas, barras completas, comprimentos, marcas, massas, pendências, resultados do motor e entidades do desenho de fabricação idênticos.
+- Comparação direta com `master` 057eec7 em 64 combinações: entradas, barras completas, comprimentos, marcas, massas, pendências, resultados do motor e entidades do desenho de fabricação idênticos. O SVG completo da seção é idêntico; o SVG da elevação é idêntico após retirar somente o novo grupo de ligações.
 - `tests/e2e/projection.spec.ts`: cinco cenários reais de Chromium, incluindo ambos os modos, dois/quatro ramos, temas claro/escuro, coordenadas da projeção, N2/N3/N4/d’, visibilidade, salvamento, edição, desfazer/refazer e reabertura. Capturas em `playwright-results`, junto da suíte completa da CI.
 - Nesta estação, o teste de interface não iniciou porque o Chromium não estava disponível e seu download retornou arquivo truncado. A verificação de interface é feita no container Playwright da CI; o resultado da execução deve ser conferido no PR.
 - Sem alterações nativas Tauri; não foi executado teste nativo de instalação.
 
 Esta entrega complementa #36; não fecha automaticamente sua conferência integral nem altera as decisões de projeção da seção já documentadas na revisão de N3/N3G.
+
+## Capturas da integração
+
+Chromium real na CI do PR #51, com o código de aplicação 9cd1d03. Pinos e solda na elevação, N4 sem duplicação, dois/quatro ramos e P1 independente no modo viga. As capturas antecedem a checagem de visibilidade; a navegação dessa checagem foi corrigida para abrir a aba Exibir.
+
+| Modo, ramos e tema       | Elevação                                                                      | Seção preservada                                                        |
+| ------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Consolo, 2 ramos, claro  | ![Elevação consolo claro](images/familias-integradas-consolo-2-elevacao.png)  | ![Seção consolo claro](images/familias-integradas-consolo-2-secao.png)  |
+| Consolo, 4 ramos, escuro | ![Elevação consolo escuro](images/familias-integradas-consolo-4-elevacao.png) | ![Seção consolo escuro](images/familias-integradas-consolo-4-secao.png) |
+| Viga, 2 ramos, claro     | ![Elevação viga claro](images/familias-integradas-viga-2-elevacao.png)        | ![Seção viga claro](images/familias-integradas-viga-2-secao.png)        |
+| Viga, 4 ramos, escuro    | ![Elevação viga escuro](images/familias-integradas-viga-4-elevacao.png)       | ![Seção viga escuro](images/familias-integradas-viga-4-secao.png)       |
 
 ## Capturas históricas do PR original
 

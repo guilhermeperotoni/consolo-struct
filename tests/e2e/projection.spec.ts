@@ -67,6 +67,7 @@ for (const beam of [false, true])
       await expect(page.getByTestId("detail-families")).toHaveCount(0);
       await page.screenshot({ path: info.outputPath("ligacoes-secao.png") });
       await elevation(page);
+      await page.getByRole("tab", { name: "Exibir", exact: true }).click();
       await page
         .getByRole("button", { name: "Mostrar armaduras", exact: true })
         .click();
