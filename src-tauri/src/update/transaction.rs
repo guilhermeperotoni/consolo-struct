@@ -15,15 +15,26 @@ pub struct ProcessLock {
 
 fn open_lock(path: &Path) -> Result<File, UpdateError> {
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
-        return Err(error("permission", "A trava de atualização não pode ser um link simbólico."));
+        return Err(error(
+            "permission",
+            "A trava de atualização não pode ser um link simbólico.",
+        ));
     }
-    OpenOptions::new().read(true).write(true).create(true).truncate(false)
-        .open(path).map_err(|e| net::io_error(e).into())
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|e| net::io_error(e).into())
 }
 
 fn try_lock(file: &File) -> Result<(), UpdateError> {
     file.try_lock().map_err(|e| match e {
-        TryLockError::WouldBlock => error("busy", "Outra cópia do ConsoloStruct já está baixando ou instalando uma atualização."),
+        TryLockError::WouldBlock => error(
+            "busy",
+            "Outra cópia do ConsoloStruct já está baixando ou instalando uma atualização.",
+        ),
         TryLockError::Error(e) => net::io_error(e).into(),
     })
 }
@@ -55,27 +66,47 @@ impl Transaction {
     pub fn begin(dir: &Path, file_name: &str) -> Result<Self, UpdateError> {
         std::fs::create_dir_all(dir).map_err(net::io_error)?;
         let lock = ProcessLock::acquire(dir)?;
-        let suffix = if file_name.ends_with(".exe") { "exe" } else { "part" };
+        let suffix = if file_name.ends_with(".exe") {
+            "exe"
+        } else {
+            "part"
+        };
         for _ in 0..32 {
-            let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
             let sequence = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
-            let path = dir.join(format!(".consolostruct-{}-{stamp}-{sequence}.{suffix}", std::process::id()));
+            let path = dir.join(format!(
+                ".consolostruct-{}-{stamp}-{sequence}.{suffix}",
+                std::process::id()
+            ));
             let mut options = OpenOptions::new();
             options.write(true).create_new(true);
-            #[cfg(unix)] {
+            #[cfg(unix)]
+            {
                 use std::os::unix::fs::OpenOptionsExt;
                 options.mode(0o600);
             }
             match options.open(&path) {
                 Ok(file) => {
                     drop(file);
-                    return Ok(Self { path, #[cfg(windows)] install_lock: dir.join(INSTALL_LOCK), _lock: lock, cleanup: true });
+                    return Ok(Self {
+                        path,
+                        #[cfg(windows)]
+                        install_lock: dir.join(INSTALL_LOCK),
+                        _lock: lock,
+                        cleanup: true,
+                    });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(net::io_error(e).into()),
             }
         }
-        Err(error("io", "Não foi possível reservar um arquivo exclusivo para a atualização."))
+        Err(error(
+            "io",
+            "Não foi possível reservar um arquivo exclusivo para a atualização.",
+        ))
     }
 
     #[cfg(windows)]
@@ -88,7 +119,9 @@ impl Transaction {
 
 impl Drop for Transaction {
     fn drop(&mut self) {
-        if self.cleanup { let _ = std::fs::remove_file(&self.path); }
+        if self.cleanup {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -96,7 +129,10 @@ impl Drop for Transaction {
 mod tests {
     use super::*;
     fn temp(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("consolostruct-transaction-{name}-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "consolostruct-transaction-{name}-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
@@ -146,10 +182,17 @@ mod tests {
         let transaction = Transaction::begin(&dir, "update.AppImage").unwrap();
         let path = transaction.path.clone();
         let result = super::super::net::write_verified(
-            &b"download"[..], &path, 8, &"0".repeat(64),
-            &std::sync::atomic::AtomicBool::new(true), &mut |_, _| {}
+            &b"download"[..],
+            &path,
+            8,
+            &"0".repeat(64),
+            &std::sync::atomic::AtomicBool::new(true),
+            &mut |_, _| {},
         );
-        assert!(matches!(result, Err(super::super::net::NetError::Cancelled)));
+        assert!(matches!(
+            result,
+            Err(super::super::net::NetError::Cancelled)
+        ));
         drop(transaction);
         assert!(!path.exists());
         assert!(Transaction::begin(&dir, "update.AppImage").is_ok());
@@ -157,7 +200,9 @@ mod tests {
 
     #[test]
     fn child_lock_probe() {
-        let Some(dir) = std::env::var_os("CONSOLO_LOCK_TEST_DIR") else { return; };
+        let Some(dir) = std::env::var_os("CONSOLO_LOCK_TEST_DIR") else {
+            return;
+        };
         let dir = PathBuf::from(dir);
         let _guard = ProcessLock::acquire(&dir).unwrap();
         std::fs::write(dir.join("child-ready"), b"ok").unwrap();
@@ -172,9 +217,16 @@ mod tests {
         let ready = dir.join("child-ready");
         let _ = std::fs::remove_file(&ready);
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "update::transaction::tests::child_lock_probe", "--nocapture"])
+            .args([
+                "--exact",
+                "update::transaction::tests::child_lock_probe",
+                "--nocapture",
+            ])
             .env("CONSOLO_LOCK_TEST_DIR", &dir)
-            .stdout(Stdio::null()).stderr(Stdio::inherit()).spawn().unwrap();
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
         let start = Instant::now();
         while !ready.exists() {
             if start.elapsed() > Duration::from_secs(10) {

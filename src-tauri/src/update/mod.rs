@@ -9,6 +9,8 @@ pub mod catalog;
 pub mod install;
 pub mod net;
 mod transaction;
+#[cfg(test)]
+mod live_test;
 #[cfg(windows)]
 mod windows;
 
@@ -22,9 +24,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager, State};
-use transaction::Transaction;
 #[cfg(test)]
 use transaction::ProcessLock;
+use transaction::Transaction;
 
 pub const PRODUCT_ID: &str = "consolostruct";
 const CATALOG_URL: &str =
@@ -327,8 +329,16 @@ fn staging_dir(app: &AppHandle, mode: &InstallMode) -> Result<PathBuf, UpdateErr
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| error("state", "Caminho do AppImage inválido.")),
-        _ => app.path().app_cache_dir().map(|p| p.join("updates"))
-            .map_err(|e| error("io", format!("Não foi possível acessar a pasta de atualização ({e})."))),
+        _ => app
+            .path()
+            .app_cache_dir()
+            .map(|p| p.join("updates"))
+            .map_err(|e| {
+                error(
+                    "io",
+                    format!("Não foi possível acessar a pasta de atualização ({e})."),
+                )
+            }),
     }
 }
 
@@ -379,7 +389,11 @@ pub async fn update_download(
                 version: offer.version.to_string(),
                 mode: install::describe(&mode, false).mode,
             };
-            *job = Job::Ready { offer, transaction, mode };
+            *job = Job::Ready {
+                offer,
+                transaction,
+                mode,
+            };
             Ok(ready)
         }
         Err(e) => {
@@ -456,7 +470,11 @@ pub fn update_apply(app: AppHandle, state: State<'_, Updater>) -> Result<(), Upd
     let (offer, mut transaction, mode) = {
         let mut job = state.job.lock().unwrap_or_else(|e| e.into_inner());
         match std::mem::replace(&mut *job, Job::Applying) {
-            Job::Ready { offer, transaction, mode } => (offer, transaction, mode),
+            Job::Ready {
+                offer,
+                transaction,
+                mode,
+            } => (offer, transaction, mode),
             previous => {
                 *job = previous;
                 return Err(error("state", "Nenhuma atualização conferida está pronta."));
@@ -464,7 +482,10 @@ pub fn update_apply(app: AppHandle, state: State<'_, Updater>) -> Result<(), Upd
         }
     };
     let outcome = if install_mode() != mode {
-        Err(error("unsupported", "A instalação mudou desde o download. Confira a nova oferta antes de atualizar."))
+        Err(error(
+            "unsupported",
+            "A instalação mudou desde o download. Confira a nova oferta antes de atualizar.",
+        ))
     } else {
         apply(&offer, &mut transaction, &mode)
     };
@@ -478,14 +499,22 @@ pub fn update_apply(app: AppHandle, state: State<'_, Updater>) -> Result<(), Upd
             *job = if e.kind == "relaunch" || !transaction.path.exists() {
                 Job::Idle
             } else {
-                Job::Ready { offer, transaction, mode }
+                Job::Ready {
+                    offer,
+                    transaction,
+                    mode,
+                }
             };
             Err(e)
         }
     }
 }
 
-fn apply(offer: &Offer, transaction: &mut Transaction, mode: &InstallMode) -> Result<(), UpdateError> {
+fn apply(
+    offer: &Offer,
+    transaction: &mut Transaction,
+    mode: &InstallMode,
+) -> Result<(), UpdateError> {
     // O arquivo pode ter sido alterado entre o download e o reinício: conferir de novo.
     let (size, sha256) = net::file_sha256(&transaction.path)?;
     if size != offer.asset.size || sha256 != offer.asset.sha256 {
@@ -497,14 +526,25 @@ fn apply(offer: &Offer, transaction: &mut Transaction, mode: &InstallMode) -> Re
     }
     match mode {
         InstallMode::WindowsNsis { dir } => {
-            #[cfg(windows)] {
-                windows::launch(&transaction.path, dir, &transaction.install_lock, offer.asset.size, &offer.asset.sha256)?;
+            #[cfg(windows)]
+            {
+                windows::launch(
+                    &transaction.path,
+                    dir,
+                    &transaction.install_lock,
+                    offer.asset.size,
+                    &offer.asset.sha256,
+                )?;
                 transaction.transfer_cleanup();
                 Ok(())
             }
-            #[cfg(not(windows))] {
+            #[cfg(not(windows))]
+            {
                 let _ = dir;
-                Err(error("unsupported", "Instalador do Windows indisponível neste sistema."))
+                Err(error(
+                    "unsupported",
+                    "Instalador do Windows indisponível neste sistema.",
+                ))
             }
         }
         InstallMode::LinuxAppImage { path: image } => replace_appimage(&transaction.path, image),

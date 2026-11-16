@@ -59,9 +59,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo -E apt-get -o Acquire::Retries=3 update
-          sudo -E apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo -E apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2 xvfb xdotool
       - uses: dtolnay/rust-toolchain@stable
-      - name: Format native sources for validation
+      - name: Check native formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all
       - name: Capture native formatting
         if: runner.os == 'Linux'
@@ -71,7 +71,19 @@ jobs:
           from pathlib import Path
           files = {str(p): p.read_text() for p in Path('src-tauri/src').rglob('*.rs')}
           print('NATIVE_FORMATTED=' + base64.b64encode(json.dumps(files).encode()).decode())
+      - name: Check installer fixture formatting
+        run: rustfmt --edition 2021 --check src-tauri/tests/fixtures/update-installer.rs
       - run: npm ci
       # generate_context! exige a interface compilada em dist/.
       - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Controlled AppImage upgrade with official packages
+        if: runner.os == 'Linux' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        env:
+          CONSOLO_NATIVE_UPGRADE_CI: "1"
+        run: xvfb-run -a cargo test --manifest-path src-tauri/Cargo.toml update::live_test::official_upgrade -- --ignored --exact --nocapture --test-threads=1
+      - name: Controlled NSIS upgrade with official packages
+        if: runner.os == 'Windows' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        env:
+          CONSOLO_NATIVE_UPGRADE_CI: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml update::live_test::official_upgrade -- --ignored --exact --nocapture --test-threads=1
