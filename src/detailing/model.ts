@@ -27,6 +27,8 @@ import {
   transverseGeometry,
   pathsClash,
 } from "./transverse";
+import { connectionGeometry, pinCenters } from "./connections";
+export { pinCenters } from "./connections";
 
 export type DetailIssue = {
   code: string;
@@ -83,16 +85,6 @@ const cm = (mm: number) =>
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
-export function pinCenters(p: Piece): number[] {
-  const s = p.detailing;
-  const pitch =
-    s.pinSpacing > 0 ? s.pinSpacing : p.design.bearingWidth / (s.pins + 1);
-  return Array.from(
-    { length: s.pins },
-    (_, i) =>
-      p.geometry.width / 2 + s.pinCenterOffset + (i - (s.pins - 1) / 2) * pitch,
-  );
-}
 export function buildDetail(piece: Piece): Detail {
   const p = piece,
     g = p.geometry,
@@ -100,6 +92,7 @@ export function buildDetail(piece: Piece): Detail {
     q = p.design,
     s = p.detailing;
   const layout = tieLayout(p),
+    connections = connectionGeometry(p, layout),
     bars: Bar[] = [],
     issues: DetailIssue[] = [];
   const issue = (
@@ -353,6 +346,7 @@ export function buildDetail(piece: Piece): Detail {
             layer,
           })),
         });
+        const welded = connections.welded.find((bar) => bar.layer === layer)!;
         add({
           family: "welded",
           description: "Barra transversal soldada",
@@ -362,7 +356,7 @@ export function buildDetail(piece: Piece): Detail {
           path: roundedPath(
             [
               { x: 0, y: 0 },
-              { x: g.width - 2 * g.cover, y: 0 },
+              { x: welded.length, y: 0 },
             ],
             0,
           ),
@@ -372,7 +366,7 @@ export function buildDetail(piece: Piece): Detail {
           hookExtra: 0,
           hookTail: 0,
           note: `Camada ${layer + 1}; solda conforme especificação do projeto`,
-          locations: [{ x: mainFront, z: row.y, layer }],
+          locations: [{ x: welded.x, z: welded.depth, layer: welded.layer }],
         });
         issue(
           "weld-review",
@@ -654,7 +648,7 @@ export function buildDetail(piece: Piece): Detail {
       );
   }
   if (s.pins > 0) {
-    const len = s.pinEmbedment + s.pinProjection;
+    const len = connections.pins?.length ?? 0;
     add({
       family: "pin",
       description: "Pino de ligação",
@@ -674,7 +668,7 @@ export function buildDetail(piece: Piece): Detail {
       hookExtra: 0,
       hookTail: 0,
       note: `Embutido ${(s.pinEmbedment / 10).toFixed(1)} cm; espera ${(s.pinProjection / 10).toFixed(1)} cm; verificar ligação`,
-      locations: [{ x: g.loadOffset, z: 0 }],
+      locations: [{ x: connections.pins?.x ?? g.loadOffset, z: 0 }],
     });
     issue(
       "pins",

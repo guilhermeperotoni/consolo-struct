@@ -2767,6 +2767,12 @@ kbd {
 .legend-line.N4 {
   border-color: #98621c;
 }
+.steel-detail-families {
+  stroke: var(--line);
+}
+.steel-detail-families circle {
+  fill: var(--line);
+}
 [data-theme="dark"] .legend-line.N4 {
   border-color: #e5b875;
 }

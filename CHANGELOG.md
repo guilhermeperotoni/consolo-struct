@@ -4,6 +4,8 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra o PR #39 com N3/N3G/N4 atuais: a elevação representa os pinos e a barra transversal soldada por camada, com bitola, marca e quantidade coerentes com o detalhamento. Pinos sobrepostos mantêm uma única projeção, com sua quantidade identificada. O modo viga mantém P1 e não inventa barra soldada. Geometria compartilhada sem recalcular ELU na projeção; seção, cálculos, quantitativos, arquivos e exportações preservados.
+
 - Corrige a interferência física N3/N3G do PR #41: grampo em plano longitudinal próprio, com altura recalculada, projeção identificada na seção e quantitativos coerentes. Reutiliza a folga livre de N3; arranjos sem espaço recebem erro impeditivo de interferência, folga ou cobrimento, sem alterar demanda, passo ou quantidade de ramos.
 
 - N3 admite 2 ou 4 ramos efetivos por posição; quatro ramos detalham um estribo fechado externo e um grampo interno da mesma bitola. A área fornecida e a sugestão usam a quantidade de ramos, preservando demanda e espaçamento longitudinal.

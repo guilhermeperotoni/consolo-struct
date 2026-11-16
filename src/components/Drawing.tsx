@@ -15,6 +15,7 @@ import {
   beamLayout,
 } from "../detailing/beam";
 import { number, type Piece, type GeometryKey } from "../domain/model";
+import { elevationShapes } from "../detailing/projection";
 type Props = {
   piece: Piece;
   section?: boolean;
@@ -136,6 +137,10 @@ export default function Drawing({
   const beam = useMemo(
     () => (beamArrangementActive(p) ? beamLayout(p) : null),
     [p],
+  );
+  const connections = useMemo(
+    () => (rebar && !section ? elevationShapes(p) : []),
+    [p, rebar, section],
   );
   const s = Math.min(
     480 / (g.columnWidth + g.length),
@@ -569,6 +574,41 @@ export default function Drawing({
                   >
                     <title>Armadura positiva (armado como viga)</title>
                   </path>
+                )}
+                {connections.length > 0 && (
+                  <g
+                    className="steel-detail-families"
+                    data-testid="detail-families"
+                    fill="none"
+                  >
+                    {connections.map((shape) => (
+                      <g
+                        key={shape.mark}
+                        data-family={shape.family}
+                        data-mark={shape.mark}
+                        data-quantity={shape.quantity}
+                        role="img"
+                        aria-label={`${shape.mark} · ${shape.quantity} × Ø${number(shape.diameter)} mm · ${shape.description}`}
+                      >
+                        <title>
+                          {`${shape.mark} · ${shape.quantity} × Ø${number(shape.diameter)} mm · ${shape.description}${shape.family === "pin" ? "; projeção dos pinos sobrepostos na elevação" : ""}`}
+                        </title>
+                        {shape.kind === "line" ? (
+                          <path
+                            d={`M${X(shape.a.x)} ${Y(shape.a.y)}L${X(shape.b.x)} ${Y(shape.b.y)}`}
+                            strokeWidth={shape.diameter * s}
+                          />
+                        ) : (
+                          <circle
+                            cx={X(shape.center.x)}
+                            cy={Y(shape.center.y)}
+                            r={(shape.diameter * s) / 2}
+                            strokeWidth="0.5"
+                          />
+                        )}
+                      </g>
+                    ))}
+                  </g>
                 )}
               </>
             )}
