@@ -4,7 +4,9 @@ import { coefficientText } from "../domain/materialSafety";
 import {
   fykOf,
   steelBondDescription,
-  steelClasses,
+  tieSteelClasses,
+  secondarySteelClasses,
+  tieSteelClassOf,
   steelClassOf,
   steelLabel,
   steelOptionLabel,
@@ -48,7 +50,8 @@ function Inspector({
   onClose: () => void;
 }) {
   const steelId = useId();
-  const steel = steelClassOf(p.materials.fyk);
+  const secondarySteelId = useId();
+  const steel = tieSteelClassOf(p.materials.fyk);
   const tabs = [
     { id: "geometry", label: "Geometria", icon: Ruler },
     { id: "loads", label: "Ações", icon: ArrowDownToLine },
@@ -253,13 +256,13 @@ function Inspector({
               AÇO DAS ARMADURAS
             </div>
             <label className="field steel-class-field" htmlFor={steelId}>
-              <span className="field-label">Classe de aço do tirante</span>
+              <span className="field-label">Aço do tirante</span>
               <select
                 id={steelId}
                 value={p.materials.fyk}
                 aria-describedby={`${steelId}-bond`}
                 onChange={(event) => {
-                  const selected = steelClassOf(Number(event.target.value));
+                  const selected = tieSteelClassOf(Number(event.target.value));
                   if (selected)
                     update({
                       ...p,
@@ -269,10 +272,12 @@ function Inspector({
               >
                 {!steel && (
                   <option value={p.materials.fyk} disabled>
-                    {steelLabel(p.materials.fyk)}
+                    {p.materials.fyk === 600
+                      ? "CA-60 · legado, não suportado no tirante"
+                      : steelLabel(p.materials.fyk)}
                   </option>
                 )}
-                {steelClasses.map((value) => (
+                {tieSteelClasses.map((value) => (
                   <option key={value} value={fykOf(value)}>
                     {steelOptionLabel(value)}
                   </option>
@@ -282,11 +287,43 @@ function Inspector({
             <p className="table-note steel-bond-note" id={`${steelId}-bond`}>
               {steelBondDescription(p.materials.fyk)}
             </p>
+            <label
+              className="field steel-class-field"
+              htmlFor={secondarySteelId}
+            >
+              <span className="field-label">Aço da costura e estribos</span>
+              <select
+                id={secondarySteelId}
+                value={p.materials.fykTransverse}
+                aria-describedby={`${secondarySteelId}-strength`}
+                onChange={(event) => {
+                  const selected = steelClassOf(Number(event.target.value));
+                  if (selected)
+                    update({
+                      ...p,
+                      materials: {
+                        ...p.materials,
+                        fykTransverse: fykOf(selected),
+                      },
+                    });
+                }}
+              >
+                {secondarySteelClasses.map((value) => (
+                  <option key={value} value={fykOf(value)}>
+                    {steelOptionLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="table-note" id={`${secondarySteelId}-strength`}>
+              As resistências de cálculo dos dois aços são limitadas a 435 MPa,
+              inclusive na ancoragem do tirante.
+            </p>
             <div className="inspector-tip">
               <Info size={15} />
               <p>
                 Adotados: γc = {coefficientText(p.design.gammaC ?? 1.4)} e γs ={" "}
-                {coefficientText(p.design.gammaS ?? 1.15)}. Aço transversal e
+                {coefficientText(p.design.gammaS ?? 1.15)}. Coeficientes e
                 exposição na aba Cálculo.
               </p>
             </div>
@@ -297,8 +334,9 @@ function Inspector({
             <div className="section-label">ARMADURA ADOTADA</div>
             <div className="info-block">
               Use Calcular para verificar o arranjo ou Sugerir armaduras. N1
-              conta ramos longitudinais; N2/N3 contam estribos fechados de dois
-              ramos. O desenho é esquemático.
+              conta ramos longitudinais; N2 mantém dois ramos. N3 tem 2 ou 4
+              ramos efetivos por posição. N4 é construtiva, obrigatória e sem
+              contribuição resistente. O desenho é esquemático.
             </div>
             {(
               [
@@ -335,7 +373,13 @@ function Inspector({
                   <NumericField
                     label="Quantidade"
                     value={p.rebar[b.count]}
-                    unit={b.id === "N1" ? "ramos" : "estribos"}
+                    unit={
+                      b.id === "N1"
+                        ? "ramos"
+                        : b.id === "N3"
+                          ? "posições"
+                          : "estribos"
+                    }
                     min={b.id === "N1" ? 2 : 1}
                     max={b.id === "N1" ? 40 : 100}
                     onChange={(v) =>
@@ -369,12 +413,42 @@ function Inspector({
                     </select>
                   </label>
                 </div>
+                {b.id === "N3" && (
+                  <label className="field">
+                    <span className="field-label">
+                      Ramos efetivos por posição
+                    </span>
+                    <select
+                      aria-label="Ramos efetivos de N3"
+                      value={p.rebar.stirrupBranches}
+                      onChange={(e) =>
+                        update({
+                          ...p,
+                          rebar: {
+                            ...p.rebar,
+                            stirrupBranches: Number(e.target.value) as 2 | 4,
+                          },
+                        })
+                      }
+                    >
+                      <option value={2}>2 · estribo externo</option>
+                      <option value={4}>
+                        4 · estribo externo + grampo interno
+                      </option>
+                    </select>
+                  </label>
+                )}
                 <div className="provided-area">
                   <span>Área geométrica das barras</span>
                   <strong>
                     {number(
                       area(
-                        p.rebar[b.count] * (b.id === "N1" ? 1 : 2),
+                        p.rebar[b.count] *
+                          (b.id === "N1"
+                            ? 1
+                            : b.id === "N3"
+                              ? p.rebar.stirrupBranches
+                              : 2),
                         p.rebar[b.diameter],
                       ) / 100,
                       2,
@@ -384,6 +458,61 @@ function Inspector({
                 </div>
               </section>
             ))}
+            <section
+              className={`rebar-editor ${selectedBar === "N4" ? "selected" : ""}`}
+              onClick={() => setBar("N4")}
+            >
+              <h4>
+                <span className="bar-tag N4">N4</span>Armadura construtiva
+              </h4>
+              <label className="field">
+                <span className="field-label">
+                  Diâmetro <i>ϕ</i>
+                </span>
+                <select
+                  aria-label="Diâmetro N4"
+                  value={p.rebar.constructiveDiameter}
+                  onChange={(e) =>
+                    update({
+                      ...p,
+                      rebar: {
+                        ...p.rebar,
+                        constructiveDiameter: Number(e.target.value),
+                      },
+                    })
+                  }
+                >
+                  {Array.from(
+                    new Set([
+                      5,
+                      6.3,
+                      8,
+                      10,
+                      12.5,
+                      16,
+                      20,
+                      25,
+                      p.rebar.constructiveDiameter,
+                    ]),
+                  )
+                    .sort((a, b) => a - b)
+                    .map((d) => (
+                      <option key={d} value={d}>
+                        {number(d, 1)} mm
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className="provided-area">
+                <span>Quantidade derivada de N3</span>
+                <strong>{p.rebar.stirrupBranches} barras</strong>
+              </div>
+              <p className="field-help">
+                Uma barra por vértice inferior interno de N3. Acompanha a face
+                inferior, prolonga-se no suporte e dobra na ponta. Não entra no
+                cálculo resistente nem na sugestão.
+              </p>
+            </section>
           </>
         )}
       </div>

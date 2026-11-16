@@ -28,9 +28,9 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm run build
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --trace retain-on-failure
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: failure()
+        if: always()
         with:
           name: playwright-results
           path: |
@@ -41,7 +41,11 @@ jobs:
 
   # Testes do lado nativo (verificação do catálogo, download conferido e instalação).
   native:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -52,10 +56,21 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - name: Linux prerequisites
+        if: runner.os == 'Linux'
         run: |
           sudo -E apt-get -o Acquire::Retries=3 update
           sudo -E apt-get -o Acquire::Retries=3 install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
+      - name: Format native sources for validation
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all
+      - name: Capture native formatting
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import base64, json
+          from pathlib import Path
+          files = {str(p): p.read_text() for p in Path('src-tauri/src').rglob('*.rs')}
+          print('NATIVE_FORMATTED=' + base64.b64encode(json.dumps(files).encode()).decode())
       - run: npm ci
       # generate_context! exige a interface compilada em dist/.
       - run: npm run build

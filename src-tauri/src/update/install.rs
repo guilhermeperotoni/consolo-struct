@@ -5,6 +5,7 @@
 // `.openstruct-managed.json` ao lado do executável; nelas o aplicativo não executa um
 // instalador próprio, para não competir com o inventário e os atalhos do Launcher.
 use serde::{Deserialize, Serialize};
+use semver::Version;
 use std::path::{Path, PathBuf};
 
 pub const MANAGED_MARKER: &str = ".openstruct-managed.json";
@@ -83,15 +84,7 @@ pub fn detect(probe: &Probe) -> InstallMode {
             }
         }
         "linux" => match probe.appimage.filter(|p| p.is_absolute() && p.is_file()) {
-            Some(path) => match path.parent() {
-                Some(dir) if managed(dir, probe.product_id) => InstallMode::Launcher {
-                    dir: dir.to_path_buf(),
-                },
-                Some(_) => InstallMode::LinuxAppImage {
-                    path: path.to_path_buf(),
-                },
-                None => unsupported_portable(),
-            },
+            Some(path) => detect_appimage(path, probe.product_id),
             None if probe.exe.starts_with("/usr") || probe.exe.starts_with("/opt") => {
                 InstallMode::Unsupported {
                     kind: "package",
@@ -109,6 +102,46 @@ pub fn detect(probe: &Probe) -> InstallMode {
             reason: "Não há pacote oficial do ConsoloStruct para este sistema.".into(),
         },
     }
+}
+
+fn detect_appimage(path: &Path, product_id: &str) -> InstallMode {
+    // O atalho pode ser um link: atualizamos/detectamos sempre a instalação real.
+    let Ok(path) = path.canonicalize() else {
+        return unsupported_portable();
+    };
+    let Some(dir) = path.parent() else {
+        return unsupported_portable();
+    };
+    if managed(dir, product_id) {
+        return InstallMode::Launcher { dir: dir.to_path_buf() };
+    }
+    // Launcher Linux: <root>/<appId>/<versão>/<appId>.AppImage;
+    // a marca pertence a <root>/<appId>, não à subpasta de versão.
+    let versioned = path.file_name().and_then(|s| s.to_str())
+        == Some(format!("{product_id}.AppImage").as_str())
+        && dir.file_name().and_then(|s| s.to_str()).is_some_and(|s| {
+            Version::parse(s).is_ok_and(|v| v.to_string() == s)
+        });
+    if versioned {
+        if let Some(root) = dir.parent() {
+            if managed(root, product_id) {
+                return InstallMode::Launcher { dir: root.to_path_buf() };
+            }
+            if root.join(MANAGED_MARKER).exists() {
+                return InstallMode::Unsupported {
+                    kind: "unsupported",
+                    reason: "A marca de gerenciamento desta instalação não confere. Atualize pelo Struct Launcher.".into(),
+                };
+            }
+        }
+    }
+    if dir.join(MANAGED_MARKER).exists() {
+        return InstallMode::Unsupported {
+            kind: "unsupported",
+            reason: "A marca de gerenciamento desta instalação não confere. Atualize pelo Struct Launcher.".into(),
+        };
+    }
+    InstallMode::LinuxAppImage { path }
 }
 
 fn unsupported_portable() -> InstallMode {
@@ -259,6 +292,45 @@ mod tests {
             detect(&probe("linux", mounted, Some(image.as_path()))),
             InstallMode::Launcher { .. }
         ));
+    }
+
+    #[test]
+    fn linux_launcher_uses_the_actual_versioned_layout() {
+        let root = temp("launcher-versioned");
+        fs::write(root.join(MANAGED_MARKER), br#"{"appId":"consolostruct","schemaVersion":1}"#).unwrap();
+        let version = root.join("0.7.1");
+        fs::create_dir(&version).unwrap();
+        let image = version.join("consolostruct.AppImage");
+        fs::write(&image, b"fixture").unwrap();
+        let detected = detect(&probe("linux", Path::new("/tmp/.mount/app"), Some(&image)));
+        assert_eq!(detected, InstallMode::Launcher { dir: root.canonicalize().unwrap() });
+        assert!(!describe(&detected, false).can_install);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_launcher_is_detected_through_a_symlink() {
+        use std::os::unix::fs::symlink;
+        let root = temp("launcher-symlink");
+        fs::write(root.join(MANAGED_MARKER), br#"{"appId":"consolostruct","schemaVersion":1}"#).unwrap();
+        fs::create_dir(root.join("0.7.1")).unwrap();
+        let image = root.join("0.7.1/consolostruct.AppImage");
+        fs::write(&image, b"fixture").unwrap();
+        let link = root.join("atalho.AppImage");
+        symlink(&image, &link).unwrap();
+        assert!(matches!(detect(&probe("linux", Path::new("/tmp/.mount/app"), Some(&link))), InstallMode::Launcher { .. }));
+    }
+
+    #[test]
+    fn independent_version_folder_is_not_assumed_to_be_launcher_owned() {
+        let root = temp("independent-version");
+        fs::create_dir(root.join("0.7.1")).unwrap();
+        let image = root.join("0.7.1/consolostruct.AppImage");
+        fs::write(&image, b"fixture").unwrap();
+        assert!(matches!(detect(&probe("linux", Path::new("/tmp/.mount/app"), Some(&image))), InstallMode::LinuxAppImage { .. }));
+        fs::write(root.join(MANAGED_MARKER), b"invalid marker").unwrap();
+        let detected = detect(&probe("linux", Path::new("/tmp/.mount/app"), Some(&image)));
+        assert!(!describe(&detected, false).can_install);
     }
 
     #[test]

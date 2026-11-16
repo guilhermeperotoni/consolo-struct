@@ -119,7 +119,7 @@ test("inclui combinação, exporta memória auditável e preserva simultaneidade
   await page.getByRole("button", { name: /Cálculo auditável/ }).click();
   const file = await dl;
   const r = JSON.parse(await readFile((await file.path())!, "utf8"));
-  expect(r.result.engineVersion).toBe("0.4.0");
+  expect(r.result.engineVersion).toBe("0.5.0");
   expect(r.result.combinations).toHaveLength(2);
   expect(r.result.combinations[1].values.vertical).toBe(200000);
   expect(r.result.combinations[1].values.horizontal).toBe(20000);

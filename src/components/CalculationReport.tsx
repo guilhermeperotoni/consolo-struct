@@ -8,6 +8,7 @@ import {
 import { number } from "../domain/model";
 import { memo } from "react";
 import LazyDetails from "./LazyDetails";
+import { gammaNDecisionText, gammaNPolicyLabels } from "../domain/gammaN";
 export const resultLabels: Record<CalculationResult["status"], string> = {
   pass: "Atende às verificações implementadas",
   fail: "Há verificações não atendidas",
@@ -30,6 +31,7 @@ const valueText = (value: number | undefined, digits = 3) =>
 const anchorageRows = (
   v: CaseResult["values"],
 ): [string, number | undefined, string][] => [
+  ["fyd adotado na ancoragem (máx. 435 MPa)", v.fydLimited, "MPa"],
   ["lb básico", v.lb, "mm"],
   ["α da ancoragem no suporte", v.anchorAlpha, ""],
   [
@@ -54,12 +56,14 @@ function BeamMemory({ c }: { c: CaseResult }) {
       "kN",
     ],
     ["γn aplicado às ações características", v.gammaN, ""],
+    ["γn da tabela NBR 9062", v.gammaN9062, ""],
     ["γc adotado", v.gammaC, ""],
     ["γs adotado", v.gammaS, ""],
     ["γc de referência da produção", v.gammaCReference, ""],
     ["γs de referência da produção", v.gammaSReference, ""],
     ["fcd", v.fcd, "MPa"],
-    ["fyd adotado", v.fydLimited, "MPa"],
+    ["fyd adotado do tirante", v.fydLimited, "MPa"],
+    ["fywd adotado da costura e estribos", v.fywd, "MPa"],
     ["d′", v.dPrime, "mm"],
     ["Vsd", v.beam_shear / 1000, "kN"],
     ["Msd = Vd·a + Hd·(hapoio + d′)", v.beam_moment / 1e6, "kN·m"],
@@ -77,6 +81,7 @@ function BeamMemory({ c }: { c: CaseResult }) {
     ["(asw/s) necessário (Vc = 0)", v.beam_stirrupRateRequired * 1000, "mm²/m"],
     ["(asw/s) mínimo", v.beam_stirrupRateMinimum * 1000, "mm²/m"],
     ["Atransv necessária", v.beam_transverseRequired, "mm²"],
+    ["N3 · área fornecida", v.stirrupProvided, "mm²"],
     ["smáx dos estribos", v.beam_stirrupSpacingLimit, "mm"],
     ["Passo real de N3 (ou L com um estribo)", v.beam_stirrupSpacing, "mm"],
     ...(v.beam_stitchApplies
@@ -194,6 +199,11 @@ function CalculationReport({
           Motor {result.engineVersion} · {result.policy} · ELU estático
         </small>
       </div>
+      <p className="table-note gamma-n-policy">
+        {result.gammaNDecision
+          ? gammaNDecisionText(result.gammaNDecision)
+          : `Política γn: ${gammaNPolicyLabels.floor12}. Máximo entre 1,2, o valor da tabela e o mínimo informado.`}
+      </p>
       {result.reasons.map((r, i) => (
         <p className="check-error" key={i}>
           {r}
@@ -282,6 +292,7 @@ function CalculationReport({
                           "",
                         ],
                         ["γc adotado", c.values.gammaC, ""],
+                        ["γn da tabela NBR 9062", c.values.gammaN9062, ""],
                         ["γs adotado", c.values.gammaS, ""],
                         [
                           "γc de referência da produção",
@@ -294,7 +305,12 @@ function CalculationReport({
                           "",
                         ],
                         ["fcd", c.values.fcd, "MPa"],
-                        ["fyd adotado", c.values.fydLimited, "MPa"],
+                        ["fyd adotado do tirante", c.values.fydLimited, "MPa"],
+                        [
+                          "fywd adotado da costura e estribos",
+                          c.values.fywd,
+                          "MPa",
+                        ],
                         ["d′", c.values.dPrime, "mm"],
                         ["θ do modelo geométrico", c.values.stm_theta, "°"],
                         ["z do modelo geométrico", c.values.stm_z, "mm"],

@@ -17,10 +17,18 @@ import {
   mandrelDiameter,
   roundedPath,
   steelMass,
+  samplePath,
   type BarPath,
 } from "./geometry";
-import { beamArrangementActive, beamLayout } from "./beam";
+import { beamArrangementActive, beamLayout, beamBarPositions } from "./beam";
 import type { BarArrangement } from "./settings";
+import {
+  constructiveGeometry,
+  transverseGeometry,
+  pathsClash,
+} from "./transverse";
+import { connectionGeometry, pinCenters } from "./connections";
+export { pinCenters } from "./connections";
 
 export type DetailIssue = {
   code: string;
@@ -34,7 +42,8 @@ export type Bar = {
     | "stitch"
     | "lower"
     | "stirrup"
-    | "mounting"
+    | "constructive"
+    | "stirrupInner"
     | "pin"
     | "welded"
     | "positive";
@@ -76,16 +85,6 @@ const cm = (mm: number) =>
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
-export function pinCenters(p: Piece): number[] {
-  const s = p.detailing;
-  const pitch =
-    s.pinSpacing > 0 ? s.pinSpacing : p.design.bearingWidth / (s.pins + 1);
-  return Array.from(
-    { length: s.pins },
-    (_, i) =>
-      p.geometry.width / 2 + s.pinCenterOffset + (i - (s.pins - 1) / 2) * pitch,
-  );
-}
 export function buildDetail(piece: Piece): Detail {
   const p = piece,
     g = p.geometry,
@@ -93,6 +92,7 @@ export function buildDetail(piece: Piece): Detail {
     q = p.design,
     s = p.detailing;
   const layout = tieLayout(p),
+    connections = connectionGeometry(p, layout),
     bars: Bar[] = [],
     issues: DetailIssue[] = [];
   const issue = (
@@ -346,6 +346,7 @@ export function buildDetail(piece: Piece): Detail {
             layer,
           })),
         });
+        const welded = connections.welded.find((bar) => bar.layer === layer)!;
         add({
           family: "welded",
           description: "Barra transversal soldada",
@@ -355,7 +356,7 @@ export function buildDetail(piece: Piece): Detail {
           path: roundedPath(
             [
               { x: 0, y: 0 },
-              { x: g.width - 2 * g.cover, y: 0 },
+              { x: welded.length, y: 0 },
             ],
             0,
           ),
@@ -365,7 +366,7 @@ export function buildDetail(piece: Piece): Detail {
           hookExtra: 0,
           hookTail: 0,
           note: `Camada ${layer + 1}; solda conforme especificação do projeto`,
-          locations: [{ x: mainFront, z: row.y, layer }],
+          locations: [{ x: welded.x, z: welded.depth, layer: welded.layer }],
         });
         issue(
           "weld-review",
@@ -379,8 +380,14 @@ export function buildDetail(piece: Piece): Detail {
   const bottomAt = (x: number, offset: number) =>
     bottomOffsetDepth(concrete, x, offset);
   if (
-    !stirrupMandrelDefined(steelClassOf(q.fykTransverse), r.stitchDiameter) ||
-    !stirrupMandrelDefined(steelClassOf(q.fykTransverse), r.stirrupDiameter)
+    !stirrupMandrelDefined(
+      steelClassOf(p.materials.fykTransverse),
+      r.stitchDiameter,
+    ) ||
+    !stirrupMandrelDefined(
+      steelClassOf(p.materials.fykTransverse),
+      r.stirrupDiameter,
+    )
   )
     issue(
       "transverse-mandrel",
@@ -410,7 +417,11 @@ export function buildDetail(piece: Piece): Detail {
       const width =
         g.width - 2 * (g.cover + r.stirrupDiameter) - r.stitchDiameter;
       const depth = front + embedment,
-        mandrel = mandrelDiameter(r.stitchDiameter, q.fykTransverse, true);
+        mandrel = mandrelDiameter(
+          r.stitchDiameter,
+          p.materials.fykTransverse,
+          true,
+        );
       if (front < g.cover + r.stitchDiameter / 2)
         issue(
           "horizontal-front",
@@ -429,7 +440,7 @@ export function buildDetail(piece: Piece): Detail {
         description:
           family === "stitch" ? "Costura superior" : "Costura inferior",
         diameter: r.stitchDiameter,
-        grade: q.fykTransverse,
+        grade: p.materials.fykTransverse,
         quantity: 1,
         path: closedStirrup(depth, width, r.stitchDiameter, mandrel),
         mandrel,
@@ -468,7 +479,7 @@ export function buildDetail(piece: Piece): Detail {
   const lowerEnd = bottomAt(
     g.cover +
       r.stitchDiameter / 2 +
-      (mandrelDiameter(r.stitchDiameter, q.fykTransverse, true) +
+      (mandrelDiameter(r.stitchDiameter, p.materials.fykTransverse, true) +
         r.stitchDiameter) /
         2,
     g.cover + r.stitchDiameter / 2,
@@ -481,29 +492,26 @@ export function buildDetail(piece: Piece): Detail {
     lowerEnd,
     "lower",
   );
-  const {
-    offset: transverseOffset,
-    pitch,
-    positions: stirrupPositions,
-  } = stirrupLayout(p);
-  for (const x of stirrupPositions) {
-    const width = g.width - 2 * transverseOffset,
-      height = bottomAt(x, transverseOffset) - transverseOffset;
-    const mandrel = mandrelDiameter(r.stirrupDiameter, q.fykTransverse, true);
+  const { offset: transverseOffset, pitch } = stirrupLayout(p);
+  const transverse = transverseGeometry(p);
+  transverse.problems.forEach(({ code, message }) => issue(code, message));
+  for (const section of transverse.sections) {
     add({
-      family: "stirrup",
-      description: "Estribo vertical",
+      family: section.internal ? "stirrupInner" : "stirrup",
+      description: section.internal
+        ? "N3 · Grampo interno"
+        : "N3 · Estribo vertical externo",
       diameter: r.stirrupDiameter,
-      grade: q.fykTransverse,
+      grade: p.materials.fykTransverse,
       quantity: 1,
-      path: closedStirrup(width, height, r.stirrupDiameter, mandrel),
-      mandrel,
-      width,
-      height,
+      path: section.path,
+      mandrel: transverse.mandrel,
+      width: section.width,
+      height: section.height,
       hookExtra: 0,
       hookTail: Math.max(5 * r.stirrupDiameter, 50),
-      note: `Fechado; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}`,
-      locations: [{ x, z: transverseOffset }],
+      note: `${section.internal ? "Grampo interno" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm para o interior` : ""}`,
+      locations: [{ x: section.x, z: transverseOffset }],
     });
   }
   if (
@@ -559,66 +567,103 @@ export function buildDetail(piece: Piece): Detail {
       "review",
     );
   }
-  if (s.mounting && !beam) {
-    const end = g.length - g.cover - s.mountingDiameter / 2;
-    const off = g.cover + r.stirrupDiameter + s.mountingDiameter / 2;
-    const nominalRadius =
-      mandrelDiameter(s.mountingDiameter, q.fykTransverse) / 2 +
-      s.mountingDiameter / 2;
-    // Intersect the parallel inset faces, rather than offsetting at each
-    // original x: that chord/fillet can enter the cover zone near a cut vertex.
-    const lines = concrete.bottom.slice(1).map((v, i) => {
-      const a = concrete.bottom[i];
-      const m = (v.depth - a.depth) / (v.x - a.x);
-      return { m, b: a.depth - m * a.x - off * Math.sqrt(1 + m * m) };
-    });
-    const corners = lines
-      .slice(1)
-      .map((line, i) => {
-        const previous = lines[i];
-        const x = (line.b - previous.b) / (previous.m - line.m);
-        return { x, y: line.m * x + line.b };
-      })
-      .filter((v) => v.x > 0 && v.x < end);
-    // At a re-entrant concrete corner the inset is a circle of radius off.
-    // A fillet at least this large stays on its concrete-interior side.
-    const radius =
-      concrete.status === "removed"
-        ? Math.max(nominalRadius, off)
-        : nominalRadius;
-    const path = roundedPath(
-      [
-        { x: -Math.min(back, g.columnWidth - g.cover), y: bottomAt(0, off) },
-        { x: 0, y: bottomAt(0, off) },
-        ...corners,
-        { x: end, y: bottomAt(end, off) },
-      ],
-      radius,
+  const constructive = constructiveGeometry(p);
+  constructive.problems.forEach((message, i) =>
+    issue(`constructive-fit-${i}`, message),
+  );
+  if (
+    !loopPinDefined(
+      steelClassOf(p.materials.fykTransverse),
+      constructive.diameter,
+    )
+  )
+    issue(
+      "constructive-mandrel",
+      "O mandril de N4 não está definido para esta classe de aço e bitola; conferir especificamente.",
     );
-    add({
-      family: "mounting",
-      description: "Porta-estribos inferior",
-      diameter: s.mountingDiameter,
-      grade: q.fykTransverse,
-      quantity: 2,
-      path,
-      mandrel:
-        concrete.status === "removed"
-          ? 2 * radius - s.mountingDiameter
-          : mandrelDiameter(s.mountingDiameter, q.fykTransverse),
-      width: end + back,
-      height: g.height - g.tipHeight,
-      hookTail: 0,
-      hookExtra: 0,
-      note: "2 barras de montagem; não computadas como armadura resistente",
-      locations: [
-        { x: 0, z: bottomAt(0, off) },
-        { x: end, z: bottomAt(end, off) },
-      ],
-    });
+  add({
+    family: "constructive",
+    description: "N4 · Armadura construtiva",
+    diameter: constructive.diameter,
+    grade: p.materials.fykTransverse,
+    quantity: constructive.branches,
+    path: constructive.path,
+    mandrel: constructive.mandrel,
+    width: 0,
+    height: g.height - g.tipHeight,
+    hookTail: constructive.tail,
+    hookExtra: 0,
+    note: `${constructive.branches} barras, uma por vértice inferior de N3; dobra frontal e prolongamento no suporte; sem contribuição resistente`,
+    locations: constructive.positions.map((v) => ({ x: v, z: 0 })),
+  });
+  // Segment distances catch crossings between vertices, not only coincident samples.
+  const n4Paths = constructive.positions.map((v) =>
+    samplePath(constructive.path, 24).map((pt): [number, number, number] => [
+      pt.x,
+      v,
+      pt.y,
+    ]),
+  );
+  for (const other of bars.filter(
+    (b) => b.family === "tie" || b.family === "positive",
+  )) {
+    const paths: [number, number, number][][] = [];
+    if (beam) {
+      for (const v of beamBarPositions(p, other.quantity, other.diameter))
+        paths.push(samplePath(other.path, 24).map((pt) => [pt.x, v, pt.y]));
+    } else if (q.frontAnchor === "loop") {
+      const inset = (g.width - other.width) / 2;
+      for (const loc of other.locations)
+        paths.push(
+          samplePath(other.path, 24).map((pt) => [pt.x, inset + pt.y, loc.z]),
+        );
+    } else {
+      for (const v of beamBarPositions(p, other.quantity, other.diameter))
+        paths.push(
+          samplePath(other.path, 24).map((pt) => [
+            pt.x,
+            v,
+            other.locations[0].z,
+          ]),
+        );
+    }
+    if (!beam && q.supportAnchor === "hook" && other.family === "tie") {
+      const inset = q.frontAnchor === "loop" ? (g.width - other.width) / 2 : 0;
+      const transverse =
+        q.frontAnchor === "loop"
+          ? [inset, g.width - inset]
+          : beamBarPositions(p, other.quantity, other.diameter);
+      for (const loc of other.locations)
+        for (const v of transverse)
+          paths.push(
+            samplePath(
+              roundedPath(
+                [
+                  { x: -back + mainR, y: loc.z },
+                  { x: -back, y: loc.z },
+                  { x: -back, y: loc.z + mainR + s.supportHookTail },
+                ],
+                mainR,
+              ),
+              24,
+            ).map((pt) => [pt.x, v, pt.y]),
+          );
+    }
+    const minimum = (other.diameter + constructive.diameter) / 2;
+    if (
+      n4Paths.some((n4) => paths.some((path) => pathsClash(n4, path, minimum)))
+    )
+      issue(
+        other.family === "tie"
+          ? "constructive-tie-clash"
+          : "constructive-positive-clash",
+        other.family === "tie"
+          ? "N4 interfere com N1; rever o arranjo sem reduzir cobrimento, bitola ou dobra."
+          : "N4 e a positiva P1 do modo viga interferem. Compatibilize o arranjo; ambas foram mantidas e quantificadas separadamente.",
+      );
   }
   if (s.pins > 0) {
-    const len = s.pinEmbedment + s.pinProjection;
+    const len = connections.pins?.length ?? 0;
     add({
       family: "pin",
       description: "Pino de ligação",
@@ -638,7 +683,7 @@ export function buildDetail(piece: Piece): Detail {
       hookExtra: 0,
       hookTail: 0,
       note: `Embutido ${(s.pinEmbedment / 10).toFixed(1)} cm; espera ${(s.pinProjection / 10).toFixed(1)} cm; verificar ligação`,
-      locations: [{ x: g.loadOffset, z: 0 }],
+      locations: [{ x: connections.pins?.x ?? g.loadOffset, z: 0 }],
     });
     issue(
       "pins",
@@ -716,7 +761,23 @@ export function buildDetail(piece: Piece): Detail {
       "special-bars",
       "A armadura de fendilhamento ou suspensão informada no cálculo requer definição própria de forma e ancoragem; não foi incluída no quadro. Detalhe este reforço antes da execução.",
     );
-  bars.forEach((b, i) => (b.mark = `N${i + 1}`));
+  const familyMark: Record<Bar["family"], string> = {
+    tie: "N1",
+    stitch: "N2",
+    lower: "N2I",
+    stirrup: "N3",
+    stirrupInner: "N3G",
+    constructive: "N4",
+    positive: "P1",
+    welded: "TS",
+    pin: "PINO",
+  };
+  for (const b of bars) {
+    const group = bars.filter((v) => v.family === b.family);
+    b.mark =
+      familyMark[b.family] +
+      (group.length > 1 ? `-${group.indexOf(b) + 1}` : "");
+  }
   if (result.status !== "pass")
     issue(
       "calculation",

@@ -22,6 +22,8 @@ export function shortFixture() {
     stitchDiameter: 6.3,
     stirrupCount: 5,
     stirrupDiameter: 6.3,
+    stirrupBranches: 2,
+    constructiveDiameter: 8,
   };
   p.design = {
     ...p.design,
@@ -70,7 +72,7 @@ export function cantileverFixture({
     cover: 25,
   };
   p.loads = { vertical, horizontal: 0, gamma: 1.4 };
-  p.materials = { fck: 30, fyk: 500 };
+  p.materials = { fck: 30, fyk: 500, fykTransverse: 500 };
   p.rebar = {
     tieCount: 4,
     tieDiameter: 20,
@@ -78,6 +80,8 @@ export function cantileverFixture({
     stitchDiameter: 6.3,
     stirrupCount: 5,
     stirrupDiameter: 6.3,
+    stirrupBranches: 2,
+    constructiveDiameter: 8,
   };
   p.design = {
     ...p.design,
@@ -90,7 +94,6 @@ export function cantileverFixture({
     supportType: "elastomer",
     bearingLength: 100,
     bearingHeight: 0,
-    fykTransverse: 500,
   };
   return p;
 }

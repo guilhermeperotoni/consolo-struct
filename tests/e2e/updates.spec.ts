@@ -9,6 +9,8 @@ type Mock = {
   downloadError?: unknown;
   version?: string;
   pending?: unknown;
+  storageError?: boolean;
+  saveCancelled?: boolean;
 };
 
 const install = {
@@ -45,6 +47,14 @@ async function desktop(page: Page, mock: Mock) {
     let progressHandler = 0;
     const w = window as unknown as Record<string, unknown>;
     w.__updateCalls = calls;
+    if (mock.storageError) {
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key === "consolostruct.project.v1")
+          throw new Error("quota exceeded");
+        return setItem.call(this, key, value);
+      };
+    }
     w.isTauri = true;
     if (mock.pending)
       localStorage.setItem(
@@ -80,6 +90,12 @@ async function desktop(page: Page, mock: Mock) {
             await wait(50);
             if (mock.checkError) throw mock.checkError;
             return mock.check;
+          case "plugin:dialog|save":
+            if (mock.saveCancelled) return null;
+            throw {
+              kind: "state",
+              message: "salvamento não configurado no teste",
+            };
           case "update_download":
             for (const received of [1_000_000, 2_500_000, 5_000_000]) {
               await wait(80);
@@ -189,6 +205,45 @@ test("falha de download é explicada e mantém a versão atual", async ({
   await expect(panel(page)).toContainText("Nenhum arquivo foi instalado");
   expect(await calls(page)).not.toContain("update_apply");
 });
+
+for (const saveFile of [false, true])
+  test(`bloqueia o reinício quando ${saveFile ? "o salvamento é cancelado" : "o rascunho não pode ser gravado"}`, async ({
+    page,
+  }) => {
+    await desktop(page, {
+      check: available,
+      storageError: true,
+      saveCancelled: true,
+    });
+    await page.goto("/");
+    await page
+      .locator(".inspector")
+      .getByLabel("Comprimento", { exact: false })
+      .fill("32,5");
+    await page
+      .locator(".inspector")
+      .getByLabel("Comprimento", { exact: false })
+      .press("Enter");
+    await panel(page)
+      .getByRole("button", { name: "Atualizar", exact: true })
+      .click({ timeout: 10_000 });
+    await panel(page)
+      .getByRole("button", { name: "Reiniciar e instalar" })
+      .click();
+    await panel(page)
+      .getByRole("button", {
+        name: saveFile ? "Salvar projeto e reiniciar" : "Reiniciar agora",
+        exact: true,
+      })
+      .click();
+    await expect(panel(page)).toContainText(
+      saveFile
+        ? "O projeto não foi salvo"
+        : "Não foi possível guardar o rascunho",
+    );
+    expect(await calls(page)).not.toContain("update_apply");
+    await expect(panel(page)).toContainText("Antes de reiniciar");
+  });
 
 test("offline na consulta automática não interrompe nem diz atualizado", async ({
   page,

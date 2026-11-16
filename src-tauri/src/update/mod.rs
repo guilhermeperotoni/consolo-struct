@@ -8,6 +8,9 @@
 pub mod catalog;
 pub mod install;
 pub mod net;
+mod transaction;
+#[cfg(windows)]
+mod windows;
 
 use catalog::{CatalogError, Offer, Selection, Target, Trust};
 use install::{InstallInfo, InstallMode, Probe};
@@ -19,6 +22,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager, State};
+use transaction::Transaction;
+#[cfg(test)]
+use transaction::ProcessLock;
 
 pub const PRODUCT_ID: &str = "consolostruct";
 const CATALOG_URL: &str =
@@ -33,7 +39,6 @@ const DOWNLOAD_HOSTS: &[&str] = &[
 const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 /// Resultado reaproveitado pela consulta automática para evitar requisições repetidas.
 const CACHE_TTL: Duration = Duration::from_secs(10 * 60);
-const STALE_LOCK: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// Chaves públicas de `distribution.json` do openstruct-catalog (sem chaves privadas).
 pub fn official_trust() -> Trust<'static> {
@@ -153,7 +158,7 @@ enum Job {
     Downloading,
     Ready {
         offer: Offer,
-        path: PathBuf,
+        transaction: Transaction,
         mode: InstallMode,
     },
     Applying,
@@ -316,46 +321,14 @@ pub async fn update_check(
 }
 
 /// Pasta de trabalho do download: ao lado do AppImage (para troca atômica) ou temporária.
-fn staging_dir(mode: &InstallMode) -> Result<PathBuf, UpdateError> {
+fn staging_dir(app: &AppHandle, mode: &InstallMode) -> Result<PathBuf, UpdateError> {
     match mode {
         InstallMode::LinuxAppImage { path } => path
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| error("state", "Caminho do AppImage inválido.")),
-        _ => Ok(std::env::temp_dir().join("consolostruct-update")),
-    }
-}
-
-/// Trava entre processos: impede duas janelas/cópias de instalar ao mesmo tempo.
-struct ProcessLock(PathBuf);
-impl ProcessLock {
-    fn acquire(dir: &Path) -> Result<Self, UpdateError> {
-        let path = dir.join(".consolostruct-update.lock");
-        let stale = std::fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|m| m.elapsed().ok())
-            .is_some_and(|age| age > STALE_LOCK);
-        if stale {
-            let _ = std::fs::remove_file(&path);
-        }
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(_) => Ok(Self(path)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(error(
-                "busy",
-                "Outra cópia do ConsoloStruct já está baixando ou instalando uma atualização.",
-            )),
-            Err(e) => Err(NetError::from_io(e).into()),
-        }
-    }
-}
-impl Drop for ProcessLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        _ => app.path().app_cache_dir().map(|p| p.join("updates"))
+            .map_err(|e| error("io", format!("Não foi possível acessar a pasta de atualização ({e})."))),
     }
 }
 
@@ -372,6 +345,7 @@ pub async fn update_download(
     state: State<'_, Updater>,
     version: String,
 ) -> Result<ReadyInfo, UpdateError> {
+    let current = current_version(&app)?;
     let mode = install_mode();
     let info = install::describe(&mode, false);
     if !info.can_install {
@@ -382,9 +356,7 @@ pub async fn update_download(
         match std::mem::replace(&mut *job, Job::Downloading) {
             Job::Idle => {}
             // Um novo pedido descarta o pacote anterior antes de baixar outra vez.
-            Job::Ready { path, .. } => {
-                let _ = std::fs::remove_file(path);
-            }
+            previous @ Job::Ready { .. } => drop(previous),
             busy => {
                 *job = busy;
                 return Err(error("busy", "A atualização já está em andamento."));
@@ -392,7 +364,6 @@ pub async fn update_download(
         }
     }
     state.cancel.store(false, Ordering::SeqCst);
-    let current = current_version(&app)?;
     let handle = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let updater = handle.state::<Updater>();
@@ -403,12 +374,12 @@ pub async fn update_download(
     .and_then(|r| r);
     let mut job = state.job.lock().unwrap_or_else(|e| e.into_inner());
     match result {
-        Ok((offer, path, mode)) => {
+        Ok((offer, transaction, mode)) => {
             let ready = ReadyInfo {
                 version: offer.version.to_string(),
                 mode: install::describe(&mode, false).mode,
             };
-            *job = Job::Ready { offer, path, mode };
+            *job = Job::Ready { offer, transaction, mode };
             Ok(ready)
         }
         Err(e) => {
@@ -424,7 +395,7 @@ fn download_blocking(
     current: &Version,
     requested: &str,
     mode: InstallMode,
-) -> Result<(Offer, PathBuf, InstallMode), UpdateError> {
+) -> Result<(Offer, Transaction, InstallMode), UpdateError> {
     // Revalida no catálogo: nunca instala silenciosamente outra versão.
     let offer = match resolve(app, current)? {
         Selection::Available(offer) if offer.version.to_string() == requested => offer,
@@ -445,26 +416,21 @@ fn download_blocking(
             ))
         }
     };
-    let dir = staging_dir(&mode)?;
-    std::fs::create_dir_all(&dir).map_err(NetError::from_io)?;
-    let _lock = ProcessLock::acquire(&dir)?;
-    let dest = match &mode {
-        InstallMode::LinuxAppImage { .. } => dir.join(format!(".{}.part", offer.file_name)),
-        _ => dir.join(&offer.file_name),
-    };
+    let dir = staging_dir(app, &mode)?;
+    let transaction = Transaction::begin(&dir, &offer.file_name)?;
     let mut emit = |received: u64, total: u64| {
         let _ = app.emit("update://progress", Progress { received, total });
     };
     client(app).download(
         &offer.asset.url,
         DOWNLOAD_HOSTS,
-        &dest,
+        &transaction.path,
         offer.asset.size,
         &offer.asset.sha256,
         &state.cancel,
         &mut emit,
     )?;
-    Ok((offer, dest, mode))
+    Ok((offer, transaction, mode))
 }
 
 #[tauri::command]
@@ -477,9 +443,7 @@ pub fn update_cancel(state: State<'_, Updater>) {
 pub fn update_discard(state: State<'_, Updater>) {
     let mut job = state.job.lock().unwrap_or_else(|e| e.into_inner());
     match std::mem::replace(&mut *job, Job::Idle) {
-        Job::Ready { path, .. } => {
-            let _ = std::fs::remove_file(path);
-        }
+        previous @ Job::Ready { .. } => drop(previous),
         // Um download em curso é interrompido por update_cancel, não por aqui.
         other => *job = other,
     }
@@ -489,17 +453,21 @@ pub fn update_discard(state: State<'_, Updater>) {
 /// trabalho do usuário; em caso de erro o aplicativo continua aberto e utilizável.
 #[tauri::command(async)]
 pub fn update_apply(app: AppHandle, state: State<'_, Updater>) -> Result<(), UpdateError> {
-    let (offer, path, mode) = {
+    let (offer, mut transaction, mode) = {
         let mut job = state.job.lock().unwrap_or_else(|e| e.into_inner());
         match std::mem::replace(&mut *job, Job::Applying) {
-            Job::Ready { offer, path, mode } => (offer, path, mode),
+            Job::Ready { offer, transaction, mode } => (offer, transaction, mode),
             previous => {
                 *job = previous;
                 return Err(error("state", "Nenhuma atualização conferida está pronta."));
             }
         }
     };
-    let outcome = apply(&offer, &path, &mode);
+    let outcome = if install_mode() != mode {
+        Err(error("unsupported", "A instalação mudou desde o download. Confira a nova oferta antes de atualizar."))
+    } else {
+        apply(&offer, &mut transaction, &mode)
+    };
     match outcome {
         Ok(()) => {
             app.exit(0);
@@ -507,62 +475,44 @@ pub fn update_apply(app: AppHandle, state: State<'_, Updater>) -> Result<(), Upd
         }
         Err(e) => {
             let mut job = state.job.lock().unwrap_or_else(|e| e.into_inner());
-            *job = if e.kind == "relaunch" || !path.exists() {
+            *job = if e.kind == "relaunch" || !transaction.path.exists() {
                 Job::Idle
             } else {
-                Job::Ready { offer, path, mode }
+                Job::Ready { offer, transaction, mode }
             };
             Err(e)
         }
     }
 }
 
-fn apply(offer: &Offer, path: &Path, mode: &InstallMode) -> Result<(), UpdateError> {
+fn apply(offer: &Offer, transaction: &mut Transaction, mode: &InstallMode) -> Result<(), UpdateError> {
     // O arquivo pode ter sido alterado entre o download e o reinício: conferir de novo.
-    let (size, sha256) = net::file_sha256(path)?;
+    let (size, sha256) = net::file_sha256(&transaction.path)?;
     if size != offer.asset.size || sha256 != offer.asset.sha256 {
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&transaction.path);
         return Err(error(
             "integrity",
             "O pacote baixado foi alterado antes da instalação e foi descartado.",
         ));
     }
     match mode {
-        InstallMode::WindowsNsis { dir } => launch_nsis(path, dir),
-        InstallMode::LinuxAppImage { path: image } => replace_appimage(path, image),
+        InstallMode::WindowsNsis { dir } => {
+            #[cfg(windows)] {
+                windows::launch(&transaction.path, dir, &transaction.install_lock, offer.asset.size, &offer.asset.sha256)?;
+                transaction.transfer_cleanup();
+                Ok(())
+            }
+            #[cfg(not(windows))] {
+                let _ = dir;
+                Err(error("unsupported", "Instalador do Windows indisponível neste sistema."))
+            }
+        }
+        InstallMode::LinuxAppImage { path: image } => replace_appimage(&transaction.path, image),
         _ => Err(error(
             "unsupported",
             "Este formato de instalação não se atualiza pelo aplicativo.",
         )),
     }
-}
-
-#[cfg(windows)]
-fn launch_nsis(installer: &Path, dir: &Path) -> Result<(), UpdateError> {
-    use std::os::windows::process::CommandExt;
-    let dir = dir.to_string_lossy();
-    if dir.contains('"') {
-        return Err(error("state", "Pasta de instalação inválida."));
-    }
-    // Instalador oficial do Tauri: /P passivo (mostra progresso), /R reabre o aplicativo,
-    // /UPDATE preserva as escolhas de atalho e /D (sempre o último, sem aspas) fixa a
-    // pasta desta mesma cópia, para que o atalho usado abra a versão nova.
-    std::process::Command::new(installer)
-        .raw_arg("/P")
-        .raw_arg("/R")
-        .raw_arg("/UPDATE")
-        .raw_arg(format!("/D={dir}"))
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| NetError::from_io(e).into())
-}
-
-#[cfg(not(windows))]
-fn launch_nsis(_: &Path, _: &Path) -> Result<(), UpdateError> {
-    Err(error(
-        "unsupported",
-        "Instalador do Windows indisponível neste sistema.",
-    ))
 }
 
 #[cfg(unix)]

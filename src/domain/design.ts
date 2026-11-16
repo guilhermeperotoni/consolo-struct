@@ -36,6 +36,8 @@ export const designSchema = z.object({
   gammaS: materialFactor("γs", 1.15),
   permanentPredominant: z.boolean(),
   gammaN: z.number().finite().min(1.2).max(3),
+  gammaNPolicy: z.enum(["floor12", "table9062"]).default("floor12"),
+  gammaNJustification: z.string().max(1000).default(""),
   forceMode: z.enum(["characteristic", "design"]),
   includeSelfWeight: z.boolean(),
   horizontalMode: z.enum(["estimated", "analysis"]),
@@ -82,7 +84,6 @@ export const designSchema = z.object({
   splittingDiameter: diameter,
   suspensionCount: z.number().int().min(0).max(100),
   suspensionDiameter: diameter,
-  fykTransverse: z.union([z.literal(500), z.literal(600)]),
   inputsConfirmed: z.boolean(),
   combinations: z
     .array(
@@ -120,6 +121,8 @@ export function defaultDesign(
     gammaS: 1.15,
     permanentPredominant: true,
     gammaN: 1.2,
+    gammaNPolicy: "floor12",
+    gammaNJustification: "",
     forceMode: "characteristic",
     includeSelfWeight: false,
     horizontalMode: "estimated",
@@ -157,7 +160,6 @@ export function defaultDesign(
     splittingDiameter: 6.3,
     suspensionCount: 0,
     suspensionDiameter: 10,
-    fykTransverse: 500,
     inputsConfirmed: false,
     combinations: [],
   };

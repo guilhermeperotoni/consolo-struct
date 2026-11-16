@@ -2,9 +2,10 @@ import { NumericField } from "./NumericField";
 import StrutLimitControl from "./StrutLimitControl";
 import MaterialSafetyControl from "./MaterialSafetyControl";
 import { coefficientText } from "../domain/materialSafety";
-import { fykOf, steelOptionLabel } from "../domain/steel";
 import type { Piece } from "../domain/model";
 import type { DesignSettings } from "../domain/design";
+import { gammaNDecision, gammaNPolicyLabels } from "../domain/gammaN";
+import { useId } from "react";
 
 export default function DesignPanel({
   piece: p,
@@ -14,6 +15,8 @@ export default function DesignPanel({
   update: (p: Piece) => void;
 }) {
   const q = p.design;
+  const gammaN = gammaNDecision(q);
+  const gammaNHelp = useId();
   const set = <K extends keyof DesignSettings>(
     key: K,
     value: DesignSettings[K],
@@ -97,7 +100,64 @@ export default function DesignPanel({
           onChange={(patch) => update({ ...p, design: { ...q, ...patch } })}
         />
         {toggle("permanentPredominant", "Ação permanente predominante")}
-        {num("gammaN", "Coeficiente adicional mínimo γn", "", 1, 1.2, 3)}
+        <section
+          className="gamma-n-control"
+          aria-label="Política de γn da peça"
+        >
+          <label className="field gamma-n-policy-field">
+            <span className="field-label">Política do coeficiente γn</span>
+            <select
+              value={q.gammaNPolicy ?? "floor12"}
+              aria-describedby={gammaNHelp}
+              onChange={(event) =>
+                set(
+                  "gammaNPolicy",
+                  event.target.value as DesignSettings["gammaNPolicy"],
+                )
+              }
+            >
+              <option value="floor12">{gammaNPolicyLabels.floor12}</option>
+              <option value="table9062" disabled={q.production === "cast"}>
+                {gammaNPolicyLabels.table9062}
+              </option>
+            </select>
+          </label>
+          {gammaN.policy === "table9062" ? (
+            <label className="field gamma-n-policy-field">
+              <span className="field-label">
+                Justificativa da política de γn
+              </span>
+              <textarea
+                value={q.gammaNJustification ?? ""}
+                maxLength={1000}
+                aria-describedby={gammaNHelp}
+                onChange={(event) =>
+                  set("gammaNJustification", event.target.value)
+                }
+                placeholder="Decisão do responsável técnico, ao menos 10 caracteres"
+              />
+            </label>
+          ) : (
+            num("gammaN", "Coeficiente adicional mínimo γn", "", 1, 1.2, 3)
+          )}
+          <p id={gammaNHelp}>
+            {q.production === "cast"
+              ? "A tabela sem piso não se aplica a moldado no local. Aplica-se a política conservadora, incluindo o mínimo informado; uma seleção anterior da tabela fica sem efeito."
+              : gammaN.policy === "table9062"
+                ? "Escolha explícita do responsável técnico. Exige justificativa com ao menos 10 caracteres e gera conferência na memória. O mínimo γn informado não participa. Não declara equivalência entre as normas."
+                : "Padrão conservador: máximo entre 1,2, o valor da tabela e o mínimo informado."}
+          </p>
+          <p>
+            {q.production === "cast"
+              ? "Referência conservadora"
+              : "γn da tabela"}
+            : {coefficientText(gammaN.gammaN9062)} · γn adotado:{" "}
+            {coefficientText(gammaN.gammaN)} · piso de referência: 1,2.
+          </p>
+          {q.forceMode === "design" && (
+            <small>As forças já de cálculo não são majoradas novamente.</small>
+          )}
+        </section>
         {select("loadType", "Introdução da carga", [
           ["direct", "Direta"],
           ["indirect", "Indireta: suspensão integral"],
@@ -195,25 +255,6 @@ export default function DesignPanel({
         {num("aggregate", "Dimensão máxima do agregado", "mm", 1, 4, 50)}
         {num("tieLayers", "Camadas do tirante", "camadas", 1, 1, 4)}
         {num("extraTopCover", "Afastamento adicional do tirante", "mm")}
-        <label className="field steel-class-field">
-          <span className="field-label">Aço da costura e estribos</span>
-          <select
-            value={q.fykTransverse}
-            onChange={(e) =>
-              set("fykTransverse", Number(e.target.value) as 500 | 600)
-            }
-          >
-            {(["CA-50", "CA-60"] as const).map((steel) => (
-              <option key={steel} value={fykOf(steel)}>
-                {steelOptionLabel(steel)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <small>
-          A resistência de cálculo das armaduras é limitada conforme o modelo;
-          fywd ≤ 435 MPa.
-        </small>
       </details>
       <details>
         <summary>Ancoragem na frente</summary>
@@ -324,24 +365,24 @@ export default function DesignPanel({
         )}
         {num(
           "splittingCount",
-          "N4 · fendilhamento transversal",
+          "N5 · fendilhamento transversal",
           "estribos",
           1,
           0,
           100,
         )}
-        {num("splittingDiameter", "N4 · diâmetro", "mm", 1, 5, 25)}
+        {num("splittingDiameter", "N5 · diâmetro", "mm", 1, 5, 25)}
         {num(
           "suspensionCount",
-          "N5 · suspensão da carga indireta",
+          "N6 · suspensão da carga indireta",
           "estribos",
           1,
           0,
           100,
         )}
-        {num("suspensionDiameter", "N5 · diâmetro", "mm", 1, 5, 25)}
+        {num("suspensionDiameter", "N6 · diâmetro", "mm", 1, 5, 25)}
         <small>
-          Dois ramos efetivos por estribo fechado. N4 e N5 são áreas exclusivas:
+          Dois ramos efetivos por estribo fechado. N5 e N6 são áreas exclusivas:
           não se contabilizam novamente em N2 ou N3. A representação gráfica
           continua esquemática.
         </small>
