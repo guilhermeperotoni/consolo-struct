@@ -138,15 +138,15 @@ A implementação original e os commits `0473dcf` e `9add095` são de **[@guilhe
 
 O [CI 43935297150](https://github.com/ricardocorsini/consolo-struct/actions/runs/43935297150), de 16/11/2026, validou a composição com a master `57ce0e8`:
 
-| Verificação                             | Resultado                                                                                                                                                         |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TypeScript e testes do núcleo/interface | 423 testes aprovados                                                                                                                                              |
-| Navegador Chromium                      | 120 testes aprovados, incluindo bloqueio do reinício quando o rascunho não pode ser gravado ou o salvamento é cancelado                                           |
-| Rust em Ubuntu 22.04 x86_64             | 36 testes aprovados; dois testes de rede/instalação ficam ignorados na suíte padrão                                                                               |
-| Rust em Windows Server 2022 x64         | 36 testes aprovados, incluindo execução nativa do auxiliar com um instalador de teste e conferência da trava durante a instalação                                 |
-| Upgrade AppImage oficial, 0.7.0 → 0.7.1 | Aprovado sob Xvfb: ambas as janelas foram abertas, a nova versão foi identificada pelo título e os bytes do AppImage instalado conferiram com o catálogo assinado |
-| Upgrade NSIS oficial, 0.7.0 → 0.7.1     | Aprovado: instalação anterior aberta, passagem ao auxiliar, fechamento da instância antiga e reabertura da 0.7.1, com versão do executável conferida              |
-| Dados dos testes nativos                | Arquivo de projeto e arquivos sentinela nas pastas de dados preservados nos dois sistemas                                                                         |
+| Verificação                             | Resultado                                                                                                                                                                                                             |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript e testes do núcleo/interface | 423 testes aprovados                                                                                                                                                                                                  |
+| Navegador Chromium                      | 120 testes aprovados, incluindo bloqueio do reinício quando o rascunho não pode ser gravado ou o salvamento é cancelado                                                                                               |
+| Rust em Ubuntu 22.04 x86_64             | 36 testes aprovados; dois testes de rede/instalação ficam ignorados na suíte padrão                                                                                                                                   |
+| Rust em Windows Server 2022 x64         | 36 testes aprovados, incluindo execução nativa do auxiliar com um instalador de teste e conferência da trava durante a instalação                                                                                     |
+| Upgrade AppImage oficial, 0.7.0 → 0.7.1 | Aprovado em extração/execução (`APPIMAGE_EXTRACT_AND_RUN=1`) sob Xvfb: ambas as janelas foram abertas, a nova versão foi identificada pelo título e os bytes do AppImage instalado conferiram com o catálogo assinado |
+| Upgrade NSIS oficial, 0.7.0 → 0.7.1     | Aprovado: instalação anterior aberta, passagem ao auxiliar, fechamento da instância antiga e reabertura da 0.7.1, com versão do executável conferida                                                                  |
+| Dados dos testes nativos                | Arquivo de projeto e arquivos sentinela nas pastas de dados preservados nos dois sistemas                                                                                                                             |
 
 Os testes controlados usam somente pacotes do catálogo oficial, autenticados pelo envelope e pela assinatura de pacote, com tamanho e SHA-256 conferidos. São ignorados por padrão e só instalam com a opção explícita `CONSOLO_NATIVE_UPGRADE_CI=1` e `CI=true`, em host descartável. O workflow habilita essa etapa para PRs do próprio repositório e execução manual; PRs de forks não executam instaladores.
 
