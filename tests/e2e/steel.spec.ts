@@ -214,7 +214,7 @@ test("aço secundário admite as três classes em Materiais e deixa de aparecer 
 
 test("seletor é acessível por teclado e cabe nos dois temas em janela estreita", async ({
   page,
-}) => {
+}, info) => {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 });
     for (const theme of ["light", "dark"]) {
@@ -251,13 +251,16 @@ test("seletor é acessível por teclado e cabe nos dois temas em janela estreita
           (el) => el.getBoundingClientRect().width <= innerWidth,
         ),
       ).toBe(true);
+      await page.screenshot({
+        path: info.outputPath(`steel-${theme}-${width}.png`),
+      });
     }
   }
 });
 
 test("abertura com migração preserva CA-60 legado e secundárias, participa do histórico e invalida cálculo", async ({
   page,
-}) => {
+}, info) => {
   const original = (await save(page)).data;
   const legacy = structuredClone(original);
   legacy.schemaVersion = 4;
@@ -283,6 +286,11 @@ test("abertura com migração preserva CA-60 legado e secundárias, participa do
     exact: true,
   });
   await expect(transverse).toHaveValue("600");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await materials(page);
+  await page.screenshot({ path: info.outputPath("steel-legacy-390.png") });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await materials(page);
   const migrated = (await save(page)).data;
   expect(migrated.schemaVersion).toBe(6);
   expect(migrated.pieces[0].materials).toMatchObject({
