@@ -11,7 +11,8 @@ import {
   steelLabel,
   steelOptionLabel,
 } from "../domain/steel";
-import { memo, useId } from "react";
+import { memo, useId, useMemo } from "react";
+import { transverseGeometry } from "../detailing/transverse";
 import {
   ChevronDown,
   SlidersHorizontal,
@@ -52,6 +53,7 @@ function Inspector({
   const steelId = useId();
   const secondarySteelId = useId();
   const steel = tieSteelClassOf(p.materials.fyk);
+  const n4Count = useMemo(() => transverseGeometry(p).positions.length, [p]);
   const tabs = [
     { id: "geometry", label: "Geometria", icon: Ruler },
     { id: "loads", label: "Ações", icon: ArrowDownToLine },
@@ -433,7 +435,7 @@ function Inspector({
                     >
                       <option value={2}>2 · estribo externo</option>
                       <option value={4}>
-                        4 · estribo externo + grampo interno
+                        4 · estribo externo + estribo interno fechado
                       </option>
                     </select>
                   </label>
@@ -505,7 +507,7 @@ function Inspector({
               </label>
               <div className="provided-area">
                 <span>Quantidade derivada de N3</span>
-                <strong>{p.rebar.stirrupBranches} barras</strong>
+                <strong>{n4Count} barras</strong>
               </div>
               <p className="field-help">
                 Uma barra por vértice inferior interno de N3. Acompanha a face

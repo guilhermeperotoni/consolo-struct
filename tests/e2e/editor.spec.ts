@@ -4,7 +4,12 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exampleProject, number, type Piece } from "../../src/domain/model";
 import { tieLayout } from "../../src/domain/engine";
-import { reactionGeometry, upperStitchLayout } from "../../src/domain/theory";
+import {
+  reactionGeometry,
+  stirrupLayout,
+  upperStitchLayout,
+} from "../../src/domain/theory";
+import { bottomDepth, concreteProfile } from "../../src/domain/profile";
 test("edita, desfaz, salva, reabre, revisa e exporta", async ({
   page,
 }, testInfo) => {
@@ -219,7 +224,11 @@ async function expectInternalStitches(page: Page, piece: Piece) {
       ),
     };
   });
-  const scale = geometry.scale / piece.geometry.height;
+  const sectionHeight = bottomDepth(
+    concreteProfile(piece),
+    stirrupLayout(piece).positions[0],
+  );
+  const scale = geometry.scale / sectionHeight;
   const layout = tieLayout(piece);
   const levels = [
     ...upperStitchLayout(piece, layout).levels,
@@ -431,8 +440,12 @@ async function expectSectionDPrime(page: Page, piece: Piece) {
   expect(geometry.start.x).toBeLessThan(geometry.left);
   expect(geometry.end.x).toBe(geometry.start.x);
   expect(geometry.start.y).toBeCloseTo(geometry.top, 4);
+  const sectionHeight = bottomDepth(
+    concreteProfile(piece),
+    stirrupLayout(piece).positions[0],
+  );
   expect(geometry.end.y).toBeCloseTo(
-    geometry.top + (layout.dPrime * geometry.height) / piece.geometry.height,
+    geometry.top + (layout.dPrime * geometry.height) / sectionHeight,
     4,
   );
   expect(geometry.end.y).toBeCloseTo(geometry.centroid, 4);
@@ -549,8 +562,11 @@ for (const layers of [1, 3]) {
       name: "Seção transversal do consolo C01",
     });
     await expect(
-      section.getByRole("button", { name: /^Editar [bh] =/ }),
-    ).toHaveCount(2);
+      section.getByRole("button", { name: /^Editar b =/ }),
+    ).toHaveCount(1);
+    await expect(section.getByRole("img", { name: /^h\(x1\) =/ })).toHaveCount(
+      1,
+    );
     await section
       .getByRole("button", { name: "Selecionar armadura N2", exact: true })
       .locator("circle")
@@ -642,7 +658,7 @@ for (const layers of [1, 3]) {
       JSON.parse(await readFile((await (await event).path())!, "utf8")),
     ).toEqual(project);
 
-    for (const key of ["b", "h"]) {
+    for (const key of ["b"]) {
       await section
         .getByRole("button", { name: new RegExp(`^Editar ${key} =`) })
         .click();

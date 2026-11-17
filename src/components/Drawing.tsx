@@ -5,10 +5,14 @@ import {
   projectedConstructiveSection,
 } from "../detailing/transverse";
 import { samplePath } from "../detailing/geometry";
-import { lowerStitchLayout } from "../detailing/model";
+import { buildDetail, lowerStitchLayout } from "../detailing/model";
 import { tieLayout } from "../domain/engine";
-import { reactionGeometry, upperStitchLayout } from "../domain/theory";
-import { bottomReach, concreteProfile } from "../domain/profile";
+import {
+  reactionGeometry,
+  stirrupLayout,
+  upperStitchLayout,
+} from "../domain/theory";
+import { bottomDepth, bottomReach, concreteProfile } from "../domain/profile";
 import { useId, useMemo } from "react";
 import {
   beamArrangementActive,
@@ -113,13 +117,21 @@ export default function Drawing({
   const uid = useId().replaceAll(":", "");
   const g = p.geometry;
   const transverse = useMemo(() => transverseGeometry(p), [p]);
+  const sectionX = stirrupLayout(p).positions[0];
   const rootSection = useMemo(
-    () =>
-      (p.rebar.stirrupBranches ?? 2) === 4
-        ? { ...transverse, sections: transverse.sections.slice(0, 2) }
-        : transverseGeometry(p, 0),
-    [p, transverse],
+    () => transverseGeometry(p, sectionX),
+    [p, sectionX],
   );
+  const sectionDetail = useMemo(
+    () => (rebar && section ? buildDetail(p) : null),
+    [p, rebar, section],
+  );
+  const transverseInvalid = sectionDetail?.issues.some(
+    (issue) =>
+      issue.code.startsWith("transverse-") ||
+      issue.code.startsWith("shape-stirrup"),
+  );
+  const rootOuter = rootSection.sections.find((sec) => !sec.internal)!;
   const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
@@ -150,14 +162,13 @@ export default function Drawing({
   const stitchInset = (depth: number) => {
     // Erode the actual outer N3 contour, with its physical radius and stroke.
     // This symbol clearance does not change N2 levels or reinforcement design.
-    const outer = rootSection.sections[0];
     const corner = rootSection.radius * s;
     const clearance =
       stitchRadius + s / 2 + (p.rebar.stirrupDiameter * s) / 2 + s / 2;
     const edgeDistance =
       Math.min(
         depth - rootSection.stirrupOffset,
-        rootSection.stirrupOffset + outer.height - depth,
+        rootSection.stirrupOffset + rootOuter.height - depth,
       ) * s;
     const innerCorner = Math.max(0, corner - clearance);
     const cornerInset =
@@ -171,7 +182,7 @@ export default function Drawing({
     (depth) =>
       Math.min(
         depth - rootSection.stirrupOffset,
-        rootSection.stirrupOffset + rootSection.sections[0].height - depth,
+        rootSection.stirrupOffset + rootOuter.height - depth,
       ) >=
       (p.rebar.stirrupDiameter + p.rebar.stitchDiameter) / 2,
   );
@@ -182,6 +193,7 @@ export default function Drawing({
   const X = (x: number) => ox + x * s,
     Y = (y: number) => oy + y * s;
   const concrete = concreteProfile(p);
+  const sectionHeight = bottomDepth(concrete, sectionX);
   const cut = concrete.status === "removed";
   const bottomPath = [...concrete.bottom]
     .reverse()
@@ -258,7 +270,7 @@ export default function Drawing({
               x={400 - (g.width * s) / 2}
               y={140}
               width={g.width * s}
-              height={g.height * s}
+              height={sectionHeight * s}
               fill="var(--concrete)"
               stroke="var(--line)"
               strokeWidth="1.5"
@@ -267,9 +279,21 @@ export default function Drawing({
               x={400 - (g.width * s) / 2}
               y={140}
               width={g.width * s}
-              height={g.height * s}
+              height={sectionHeight * s}
               fill={`url(#${uid}concrete)`}
             />
+            {rebar && transverseInvalid && (
+              <text
+                x={400}
+                y={80}
+                textAnchor="middle"
+                className="dimension-text"
+                fill="var(--danger)"
+              >
+                Arranjo N3/N3G inválido para fabricação: conferir espaçamento,
+                forma ou interferência com N1.
+              </text>
+            )}
             {rebar && !stitchProjectionFits && (
               <text
                 x={400}
@@ -282,7 +306,7 @@ export default function Drawing({
                 níveis preservados.
               </text>
             )}
-            {rebar && rootSection.branches === 4 && (
+            {rebar && rootSection.sections.some((sec) => sec.internal) && (
               <text
                 x={400}
                 y={120}
@@ -445,15 +469,34 @@ export default function Drawing({
                   onClick={(anchor) => onDimension("width", anchor)}
                   active={focus === "width"}
                 />
-                <Dim
-                  x1={440 + (g.width * s) / 2}
-                  y1={140}
-                  x2={440 + (g.width * s) / 2}
-                  y2={140 + g.height * s}
-                  label={cm("height")}
-                  onClick={(anchor) => onDimension("height", anchor)}
-                  active={focus === "height"}
-                />
+                <g
+                  className="dimension dimension-derived"
+                  role="img"
+                  aria-label={`h(x1) = ${number(sectionHeight / 10, 1)} cm · altura do concreto na seção A–A`}
+                >
+                  <title>Altura do concreto na estação do 1º estribo</title>
+                  <path
+                    d={`M${440 + (g.width * s) / 2} 140V${140 + sectionHeight * s}`}
+                    fill="none"
+                  />
+                  <path
+                    d={`M${436 + (g.width * s) / 2} 144l8 -8 M${436 + (g.width * s) / 2} ${140 + sectionHeight * s + 4}l8 -8`}
+                    fill="none"
+                  />
+                  <g className="dimension-extension" fill="none">
+                    <path
+                      d={`M${400 + (g.width * s) / 2} 140H${448 + (g.width * s) / 2} M${400 + (g.width * s) / 2} ${140 + sectionHeight * s}H${448 + (g.width * s) / 2}`}
+                    />
+                  </g>
+                  <text
+                    x={444 + (g.width * s) / 2}
+                    y={(280 + sectionHeight * s) / 2}
+                    textAnchor="middle"
+                    transform={`rotate(-90 ${444 + (g.width * s) / 2} ${(280 + sectionHeight * s) / 2})`}
+                  >
+                    {`h = ${number(sectionHeight / 10, 1)}`}
+                  </text>
+                </g>
               </>
             )}
             {rebar && lowerStitchMissing && (
@@ -470,10 +513,10 @@ export default function Drawing({
             <text
               className="drawing-caption"
               x="400"
-              y={Math.min(555, 170 + g.height * s)}
+              y={Math.min(555, 170 + sectionHeight * s)}
               textAnchor="middle"
             >
-              SEÇÃO A–A · JUNTO AO PILAR
+              {`SEÇÃO A–A · 1º ESTRIBO · x = ${number(sectionX / 10, 2)} cm`}
             </text>
           </>
         ) : (
@@ -546,7 +589,7 @@ export default function Drawing({
                       d={polyline(samplePath(constructive.path, 24))}
                     >
                       <title>
-                        {`N4 construtiva · barra ${i + 1} de ${constructive.branches} · sem contribuição resistente`}
+                        {`N4 construtiva · barra ${i + 1} de ${constructive.positions.length} · sem contribuição resistente`}
                       </title>
                     </path>
                   ))}

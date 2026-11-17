@@ -64,7 +64,11 @@ describe("Centro de gravidade das barras e comprimentos de oficina", () => {
 describe("Posições, tirante duplo e quadro de aço", () => {
   it("quatro ramos são duas alças e não quatro alças", () => {
     const detail = buildDetail(shortFixture());
-    expect(detail.issues.filter((i) => i.severity === "error")).toEqual([]);
+    // The rounded N3 corner penetrates N1 by 0.601 mm; counting two loops
+    // must not certify their physical clearance or suppress that diagnostic.
+    expect(
+      detail.issues.filter((i) => i.severity === "error").map((i) => i.code),
+    ).toEqual(["transverse-tie-clash"]);
     const loops = detail.bars.filter((b) => b.family === "tie");
     expect(loops.reduce((n, b) => n + b.quantity, 0)).toBe(2);
     expect(loops).toHaveLength(2); // nested loops have different cut lengths

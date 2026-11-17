@@ -7,7 +7,8 @@ async function seed(page: Page, beam: boolean, branches: 2 | 4) {
   const p = shortFixture();
   p.geometry.tipHeight = 450;
   p.rebar.stirrupBranches = branches;
-  p.rebar.tieCount = 6;
+  // Four physical N1 bars in the first layer are required to define N3G.
+  p.rebar.tieCount = 8;
   p.design.frontAnchor = "welded";
   p.design.tieLayers = 2;
   p.detailing.pins = 3;

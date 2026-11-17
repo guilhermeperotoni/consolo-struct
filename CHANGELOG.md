@@ -4,6 +4,10 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Complementa a revisão do PR #57: detecta penetração real nas dobras de N3/N3G, propaga os erros de todas as estações à seção A–A, usa a posição real quando existe um único estribo e não desenha nem quantifica N3G/N4 internas sem as N1 centrais necessárias. Mantém entradas e resultados do cálculo resistente.
+
+- Corrige a geometria do estribo de 4 ramos (issue #49): N3G passa a ser um estribo interno fechado (`closedStirrup`) justaposto ao N3 (`Δx = φN3`) em ordem longitudinal monotônica, com largura definida pelas N1 centrais da 1ª camada e N4 internas nos cantos inferiores, verificação de colisão `N3/N3G × N1`, seção A–A da modelagem unificada na estação do 1º estribo com aviso de arranjo inválido e alinhamento das profundidades da costura inferior N2I entre modelagem, 3D e detalhamento (issue #50).
+
 - Integra a contribuição de @guilhermeperotoni na PR #46, preservando os commits originais. Corrige a detecção do Launcher Linux nas pastas por versão e a exclusividade do pacote entre download e instalação, incluindo a transferência da proteção ao instalador Windows.
 - Verifica atualizações ao abrir o aplicativo, inclusive por atalho e sem o Struct Launcher (issue #45). A consulta usa o catálogo assinado do OpenStruct (Ed25519, chaves fixadas), seleciona só versões estáveis mais novas do `consolostruct` com pacote assinado para o sistema, e mostra versão em execução, oferecida e novidades com Atualizar e Agora não. Nada é baixado, instalado ou reiniciado sem ação explícita; o trabalho é protegido antes do reinício. Instalações do Launcher são encaminhadas a ele; NSIS e AppImage independentes se atualizam no lugar; .deb e executáveis avulsos recebem o caminho seguro. Veja [docs/ATUALIZACOES.md](docs/ATUALIZACOES.md).
 

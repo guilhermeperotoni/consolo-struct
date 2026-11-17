@@ -185,6 +185,17 @@ export function samplePath(path: BarPath, divisions = 12): Point[] {
     return index ? pts.slice(1) : pts;
   });
 }
+/** Maximum sagitta between an arc and the chords returned by samplePath. */
+export function pathSamplingError(path: BarPath, divisions: number): number {
+  return Math.max(
+    0,
+    ...path.segments.map((segment) =>
+      segment.type === "arc"
+        ? segment.radius * (1 - Math.cos(segment.sweep / (2 * divisions)))
+        : 0,
+    ),
+  );
+}
 export function mandrelDiameter(
   diameter: number,
   fyk: number,
