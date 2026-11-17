@@ -25,6 +25,7 @@ import type { BarArrangement } from "./settings";
 import {
   constructiveGeometry,
   transverseGeometry,
+  translatePath,
   pathsClash,
 } from "./transverse";
 import { connectionGeometry, pinCenters } from "./connections";
@@ -499,7 +500,7 @@ export function buildDetail(piece: Piece): Detail {
     add({
       family: section.internal ? "stirrupInner" : "stirrup",
       description: section.internal
-        ? "N3 · Grampo interno"
+        ? "N3 · Estribo interno fechado"
         : "N3 · Estribo vertical externo",
       diameter: r.stirrupDiameter,
       grade: p.materials.fykTransverse,
@@ -510,7 +511,7 @@ export function buildDetail(piece: Piece): Detail {
       height: section.height,
       hookExtra: 0,
       hookTail: Math.max(5 * r.stirrupDiameter, 50),
-      note: `${section.internal ? "Grampo interno" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm para o interior` : ""}`,
+      note: `${section.internal ? "Estribo interno fechado" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, justaposto com afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm` : ""}`,
       locations: [{ x: section.x, z: transverseOffset }],
     });
   }
@@ -604,6 +605,23 @@ export function buildDetail(piece: Piece): Detail {
       pt.y,
     ]),
   );
+  const cornerSlack =
+    Math.max(
+      0,
+      (transverse.radius - (r.tieDiameter + r.stirrupDiameter) / 2) *
+        (Math.SQRT2 - 1),
+    ) +
+    transverse.radius * (1 - Math.cos(Math.PI / 96));
+  const transversePaths = transverse.sections.map((section) =>
+    samplePath(
+      translatePath(
+        { ...section.path, segments: section.path.segments.slice(2, -2) },
+        section.offset,
+        transverse.stirrupOffset,
+      ),
+      48,
+    ).map((pt): [number, number, number] => [section.x, pt.x, pt.y]),
+  );
   for (const other of bars.filter(
     (b) => b.family === "tie" || b.family === "positive",
   )) {
@@ -660,6 +678,22 @@ export function buildDetail(piece: Piece): Detail {
         other.family === "tie"
           ? "N4 interfere com N1; rever o arranjo sem reduzir cobrimento, bitola ou dobra."
           : "N4 e a positiva P1 do modo viga interferem. Compatibilize o arranjo; ambas foram mantidas e quantificadas separadamente.",
+      );
+    if (
+      other.family === "tie" &&
+      transversePaths.some((stirrup) =>
+        paths.some((path) =>
+          pathsClash(
+            stirrup,
+            path,
+            (other.diameter + r.stirrupDiameter) / 2 - cornerSlack,
+          ),
+        ),
+      )
+    )
+      issue(
+        "transverse-tie-clash",
+        "N3/N3G interfere com N1; rever o arranjo sem reduzir cobrimento, bitola ou dobra.",
       );
   }
   if (s.pins > 0) {

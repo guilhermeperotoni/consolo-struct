@@ -1,9 +1,15 @@
 import { transverseGeometry } from "../../src/detailing/transverse";
+import { buildDetail, lowerStitchLayout } from "../../src/detailing/model";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exampleProject, number, type Piece } from "../../src/domain/model";
 import { tieLayout } from "../../src/domain/engine";
-import { reactionGeometry, upperStitchLayout } from "../../src/domain/theory";
+import {
+  reactionGeometry,
+  stirrupLayout,
+  upperStitchLayout,
+} from "../../src/domain/theory";
+import { bottomDepth, concreteProfile } from "../../src/domain/profile";
 test("edita, desfaz, salva, reabre, revisa e exporta", async ({
   page,
 }, testInfo) => {
@@ -218,16 +224,16 @@ async function expectInternalStitches(page: Page, piece: Piece) {
       ),
     };
   });
-  const scale = geometry.scale / piece.geometry.height;
+  const sectionHeight = bottomDepth(
+    concreteProfile(piece),
+    stirrupLayout(piece).first,
+  );
+  const scale = geometry.scale / sectionHeight;
   const layout = tieLayout(piece);
-  const levels = [...upperStitchLayout(piece, layout).levels];
-  if (reactionGeometry(piece).a / layout.d <= 0.5)
-    for (let i = 0; i < piece.design.lowerStitchCount; i++)
-      levels.push(
-        layout.dPrime +
-          (2 * layout.d) / 3 +
-          ((i + 0.5) * layout.d) / (3 * piece.design.lowerStitchCount),
-      );
+  const levels = [
+    ...upperStitchLayout(piece, layout).levels,
+    ...lowerStitchLayout(piece, layout).levels,
+  ];
   expect(geometry.bars).toHaveLength(2 * levels.length);
   geometry.bars.forEach((bar, index) => {
     const outerRadius = bar.radius + bar.stroke / 2;
@@ -434,8 +440,12 @@ async function expectSectionDPrime(page: Page, piece: Piece) {
   expect(geometry.start.x).toBeLessThan(geometry.left);
   expect(geometry.end.x).toBe(geometry.start.x);
   expect(geometry.start.y).toBeCloseTo(geometry.top, 4);
+  const sectionHeight = bottomDepth(
+    concreteProfile(piece),
+    stirrupLayout(piece).first,
+  );
   expect(geometry.end.y).toBeCloseTo(
-    geometry.top + (layout.dPrime * geometry.height) / piece.geometry.height,
+    geometry.top + (layout.dPrime * geometry.height) / sectionHeight,
     4,
   );
   expect(geometry.end.y).toBeCloseTo(geometry.centroid, 4);
@@ -621,9 +631,9 @@ for (const layers of [1, 3]) {
         const box = (await other.boundingBox())!;
         expect(
           text.x + text.width <= box.x ||
-            box.x + box.width <= text.x ||
-            text.y + text.height <= box.y ||
-            box.y + box.height <= text.y,
+          box.x + box.width <= text.x ||
+          text.y + text.height <= box.y ||
+          box.y + box.height <= text.y,
         ).toBe(true);
       }
       await page
@@ -764,7 +774,7 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   const layout = tieLayout(piece),
     levels = [
       ...upperStitchLayout(piece, layout).levels,
-      layout.dPrime + (5 * layout.d) / 6,
+      ...lowerStitchLayout(piece, layout).levels,
     ];
   const scale = Math.min(
     480 / (piece.geometry.columnWidth + piece.geometry.length),
@@ -775,4 +785,44 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   centers.forEach((y, i) =>
     expect(y).toBeCloseTo(140 + levels[Math.floor(i / 2)] * scale, 8),
   );
+});
+
+test("seção A–A da peça padrão usa profundidades N2I do detalhamento e não exibe aviso de falta de espaço", async ({
+  page,
+}) => {
+  const project = exampleProject();
+  const piece = project.pieces[0];
+  await page.addInitScript(
+    (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+    JSON.stringify(project),
+  );
+  await page.goto("/");
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  await expect(page.locator("#piece-drawing")).not.toContainText(
+    "N2 sem espaço no contorno projetado",
+  );
+  const layout = tieLayout(piece);
+  const detailLowerDepths = buildDetail(piece)
+    .bars.filter((bar) => bar.family === "lower")
+    .map((bar) => bar.locations[0].z);
+  const upperCount = upperStitchLayout(piece, layout).levels.length;
+  const centers = await page
+    .locator(".steel-N2 circle")
+    .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
+  const scale = Math.min(
+    480 / (piece.geometry.columnWidth + piece.geometry.length),
+    340 / (piece.geometry.height + 80),
+    480 / piece.geometry.width,
+  );
+  const lowerCenters = centers.slice(upperCount * 2);
+  expect(lowerCenters).toHaveLength(detailLowerDepths.length * 2);
+  lowerCenters.forEach((y, i) => {
+    const depth = (y - 140) / scale;
+    expect(Math.abs(depth - detailLowerDepths[Math.floor(i / 2)])).toBeLessThan(
+      1e-9,
+    );
+  });
 });

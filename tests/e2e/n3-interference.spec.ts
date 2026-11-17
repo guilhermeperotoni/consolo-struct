@@ -1,10 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { exampleProject } from "../../src/domain/model";
 import { shortFixture } from "../fixtures";
-async function seed(page: Page, count = 5) {
+async function seed(page: Page, count = 5, length?: number) {
   const p = shortFixture();
   p.rebar.stirrupBranches = 4;
   p.rebar.stirrupCount = count;
+  if (length !== undefined) p.geometry.length = length;
   await page.addInitScript(
     (raw) => localStorage.setItem("consolostruct.project.v1", raw),
     JSON.stringify({ ...exampleProject(), pieces: [p] }),
@@ -24,7 +25,7 @@ test("N3G tem plano próprio e seção indica a projeção, com N4 em cada plano
   const x = Number(await outer.getAttribute("data-longitudinal-position")),
     xi = Number(await inner.getAttribute("data-longitudinal-position"));
   expect(x).toBe(28.15);
-  expect(xi - x).toBeCloseTo(29.1, 10);
+  expect(xi - x).toBeCloseTo(6.3, 10);
   await expect(page.locator("#piece-drawing")).toContainText("projeção do par");
   const planes = await page
     .locator(".steel-N4 circle")
@@ -44,14 +45,22 @@ test("N3G tem plano próprio e seção indica a projeção, com N4 em cada plano
 test("arranjo congestionado exibe erro físico específico de N3/N3G", async ({
   page,
 }) => {
-  await seed(page, 8);
+  await seed(page, 4, 80);
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  await expect(page.locator("#piece-drawing")).toContainText(
+    "Arranjo N3/N3G inválido para fabricação",
+  );
   await page
     .locator(".document-tabs")
     .getByRole("button", { name: "Detalhamento", exact: true })
     .click();
   await expect(
     page.locator(".detail-issues .error").filter({
-      hasText: "Há interferência física entre estribos N3 e/ou grampos N3G",
+      hasText:
+        "Há interferência física entre estribos N3 e/ou estribos internos fechados N3G",
     }),
   ).toBeVisible();
   await expect(

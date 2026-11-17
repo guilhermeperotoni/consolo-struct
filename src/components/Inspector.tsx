@@ -433,7 +433,7 @@ function Inspector({
                     >
                       <option value={2}>2 · estribo externo</option>
                       <option value={4}>
-                        4 · estribo externo + grampo interno
+                        4 · estribo externo + estribo interno fechado
                       </option>
                     </select>
                   </label>

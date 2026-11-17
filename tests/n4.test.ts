@@ -535,7 +535,7 @@ describe("N3/N4 — geometria física e saídas", () => {
       expect(drawingDxf(drawing)).toContain("N4");
       if (branches === 4) {
         expect(csv).toContain('"N3G-1"');
-        expect(drawingSvg(drawing)).toContain("Grampo interno");
+        expect(drawingSvg(drawing)).toContain("Estribo interno fechado");
       }
       const pdf = await drawingPdf([drawing]);
       const streams = [
