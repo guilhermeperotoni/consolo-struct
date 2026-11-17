@@ -5,6 +5,7 @@ import {
   projectedConstructiveSection,
 } from "../detailing/transverse";
 import { samplePath } from "../detailing/geometry";
+import { lowerStitchLayout } from "../detailing/model";
 import { tieLayout } from "../domain/engine";
 import { reactionGeometry, upperStitchLayout } from "../domain/theory";
 import { bottomReach, concreteProfile } from "../domain/profile";
@@ -122,17 +123,12 @@ export default function Drawing({
   const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
+  const lowerStitchLevels = lowerStitchLayout(p, layout).levels;
+  const lowerStitchMissing =
+    p.design.lowerStitchCount > 0 && lowerStitchLevels.length === 0;
   const stitchLevels = [
     ...upperStitchLayout(p, layout).levels,
-    ...(reaction.a / layout.d <= 0.5
-      ? Array.from(
-          { length: p.design.lowerStitchCount },
-          (_, i) =>
-            layout.dPrime +
-            (2 * layout.d) / 3 +
-            ((i + 0.5) * layout.d) / 3 / p.design.lowerStitchCount,
-        )
-      : []),
+    ...lowerStitchLevels,
   ];
   const beam = useMemo(
     () => (beamArrangementActive(p) ? beamLayout(p) : null),
@@ -459,6 +455,17 @@ export default function Drawing({
                   active={focus === "height"}
                 />
               </>
+            )}
+            {rebar && lowerStitchMissing && (
+              <text
+                x={400}
+                y={155 + g.height * s}
+                textAnchor="middle"
+                className="dimension-text"
+                fill="var(--danger)"
+              >
+                N2I sem altura suficiente para distribuir as barras.
+              </text>
             )}
             <text
               className="drawing-caption"

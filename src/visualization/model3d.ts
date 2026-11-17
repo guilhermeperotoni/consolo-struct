@@ -4,6 +4,7 @@ import {
   translatePath,
 } from "../detailing/transverse";
 import { samplePath } from "../detailing/geometry";
+import { lowerStitchLayout } from "../detailing/model";
 import { number, type GeometryKey, type Piece } from "../domain/model";
 import { tieLayout } from "../domain/engine";
 import { reactionGeometry, upperStitchLayout } from "../domain/theory";
@@ -62,7 +63,7 @@ export function buildSceneModel(p: Piece): SceneModel {
     side = g.width / 2;
   const layout = tieLayout(p);
   const concrete = concreteProfile(p);
-  const { d, dPrime, rows } = layout;
+  const { rows } = layout;
   const dim = (
     id: GeometryKey,
     symbol: string,
@@ -283,9 +284,7 @@ export function buildSceneModel(p: Piece): SceneModel {
     steel.push({ id: "N2", diameter: r.stitchDiameter, points });
   };
   for (const depth of upperStitchLayout(p, layout).levels) costura(depth);
-  if (reaction.a / d <= 0.5)
-    for (let i = 0; i < q.lowerStitchCount; i++)
-      costura(dPrime + (2 * d) / 3 + ((i + 0.5) * d) / 3 / q.lowerStitchCount);
+  for (const depth of lowerStitchLayout(p, layout).levels) costura(depth);
   const transverse = transverseGeometry(p);
   for (const section of transverse.sections)
     steel.push({

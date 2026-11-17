@@ -1,4 +1,5 @@
 import { transverseGeometry } from "../../src/detailing/transverse";
+import { buildDetail, lowerStitchLayout } from "../../src/detailing/model";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exampleProject, number, type Piece } from "../../src/domain/model";
@@ -220,14 +221,10 @@ async function expectInternalStitches(page: Page, piece: Piece) {
   });
   const scale = geometry.scale / piece.geometry.height;
   const layout = tieLayout(piece);
-  const levels = [...upperStitchLayout(piece, layout).levels];
-  if (reactionGeometry(piece).a / layout.d <= 0.5)
-    for (let i = 0; i < piece.design.lowerStitchCount; i++)
-      levels.push(
-        layout.dPrime +
-          (2 * layout.d) / 3 +
-          ((i + 0.5) * layout.d) / (3 * piece.design.lowerStitchCount),
-      );
+  const levels = [
+    ...upperStitchLayout(piece, layout).levels,
+    ...lowerStitchLayout(piece, layout).levels,
+  ];
   expect(geometry.bars).toHaveLength(2 * levels.length);
   geometry.bars.forEach((bar, index) => {
     const outerRadius = bar.radius + bar.stroke / 2;
@@ -735,7 +732,7 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
     piece = project.pieces[0];
   Object.assign(piece.geometry, {
     width: 500,
-    height: 600,
+    height: 260,
     length: 250,
     cover: 40,
   });
@@ -745,7 +742,7 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
     stitchCount: 4,
     tieCount: 7,
   });
-  Object.assign(piece.design, { lowerStitchCount: 1, tieLayers: 3 });
+  Object.assign(piece.design, { lowerStitchCount: 0, tieLayers: 3 });
   await page.addInitScript(
     (raw) => localStorage.setItem("consolostruct.project.v1", raw),
     JSON.stringify(project),
@@ -758,13 +755,16 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   await expect(page.locator("#piece-drawing")).toContainText(
     "N2 sem espaço no contorno projetado",
   );
+  await expect(page.locator("#piece-drawing")).not.toContainText(
+    "N2I sem altura suficiente",
+  );
   const centers = await page
     .locator(".steel-N2 circle")
     .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
   const layout = tieLayout(piece),
     levels = [
       ...upperStitchLayout(piece, layout).levels,
-      layout.dPrime + (5 * layout.d) / 6,
+      ...lowerStitchLayout(piece, layout).levels,
     ];
   const scale = Math.min(
     480 / (piece.geometry.columnWidth + piece.geometry.length),
@@ -775,4 +775,72 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   centers.forEach((y, i) =>
     expect(y).toBeCloseTo(140 + levels[Math.floor(i / 2)] * scale, 8),
   );
+});
+
+test("seção A–A avisa quando a costura inferior solicitada não cabe", async ({
+  page,
+}) => {
+  const project = exampleProject();
+  const piece = project.pieces[0];
+  Object.assign(piece.geometry, { height: 260, cover: 40, loadOffset: 95 });
+  piece.design.lowerStitchCount = 2;
+  expect(buildDetail(piece).issues).toContainEqual(
+    expect.objectContaining({ code: "zone-lower" }),
+  );
+  await page.addInitScript(
+    (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+    JSON.stringify(project),
+  );
+  await page.goto("/");
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  const drawing = page.locator("#piece-drawing");
+  await expect(
+    drawing.getByText("N2I sem altura suficiente para distribuir as barras."),
+  ).toBeVisible();
+  await expect(drawing.locator(".steel-N2 circle")).toHaveCount(
+    2 * piece.rebar.stitchCount,
+  );
+});
+
+test("seção A–A da peça padrão usa profundidades N2I do detalhamento e não exibe aviso de falta de espaço", async ({
+  page,
+}) => {
+  const project = exampleProject();
+  const piece = project.pieces[0];
+  await page.addInitScript(
+    (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+    JSON.stringify(project),
+  );
+  await page.goto("/");
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  await expect(page.locator("#piece-drawing")).not.toContainText(
+    /N2 sem espaço no contorno projetado|N2I sem altura suficiente/,
+  );
+  const layout = tieLayout(piece);
+  const detailLowerDepths = buildDetail(piece)
+    .bars.filter((bar) => bar.family === "lower")
+    .map((bar) => bar.locations[0].z);
+  const upperCount = upperStitchLayout(piece, layout).levels.length;
+  const centers = await page
+    .locator(".steel-N2 circle")
+    .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
+  const scale = Math.min(
+    480 / (piece.geometry.columnWidth + piece.geometry.length),
+    340 / (piece.geometry.height + 80),
+    480 / piece.geometry.width,
+  );
+  const lowerCenters = centers.slice(upperCount * 2);
+  expect(lowerCenters).toHaveLength(detailLowerDepths.length * 2);
+  lowerCenters.forEach((y, i) => {
+    const depth = (y - 140) / scale;
+    expect(Math.abs(depth - detailLowerDepths[Math.floor(i / 2)])).toBeLessThan(
+      1e-9,
+    );
+  });
 });
