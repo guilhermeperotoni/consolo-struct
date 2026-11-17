@@ -5,7 +5,12 @@ import * as engine from "../src/domain/engine";
 import { decodeProject, exampleProject } from "../src/domain/model";
 import { connectionGeometry, pinCenters } from "../src/detailing/connections";
 import { buildDetail } from "../src/detailing/model";
-import { elevationShapes } from "../src/detailing/projection";
+import {
+  elevationShapes,
+  elevationTiePaths,
+  sectionBars,
+} from "../src/detailing/projection";
+import { stirrupLayout } from "../src/domain/theory";
 import Drawing from "../src/components/Drawing";
 import { shortFixture } from "./fixtures";
 
@@ -157,5 +162,67 @@ describe("Projeções de ligações integradas a N3/N4 (#39)", () => {
     expect(reopened.detailing).not.toHaveProperty("mounting");
     expect(elevationShapes(reopened)).toEqual(elevationShapes(p));
     expect(buildDetail(reopened).bars).toEqual(buildDetail(p).bars);
+  });
+});
+
+describe("Sincronização de armaduras entre detalhamento, elevação e seção A–A (#36)", () => {
+  it("N1 em alça na seção A–A usa os insets reais do detalhamento e omite alça descartada", () => {
+    const p = shortFixture();
+    p.geometry.width = 240;
+    p.design.frontAnchor = "loop";
+    p.design.loopInternalDiameter = 100;
+    p.rebar.tieCount = 4;
+    const d = buildDetail(p),
+      x1 = stirrupLayout(p).first;
+    const sec = sectionBars(p, d, x1);
+    expect(sec.ties).toHaveLength(2);
+    const inset =
+      (p.geometry.width - d.bars.find((b) => b.family === "tie")!.width) / 2;
+    expect(sec.ties.map((t) => t.v)).toEqual([inset, p.geometry.width - inset]);
+  });
+
+  it("N1 na elevação inclui dobra de suporte quando supportAnchor = hook", () => {
+    const p = shortFixture();
+    p.design.supportAnchor = "hook";
+    const d = buildDetail(p);
+    const [pts] = elevationTiePaths(p, d);
+    expect(pts.length).toBeGreaterThan(2);
+    expect(pts.at(-1)!.y).toBeGreaterThan(pts[0].y);
+  });
+
+  it("costuras na seção A–A incluem apenas barras que cruzam o plano x1", () => {
+    const p = shortFixture();
+    p.design.lowerStitchCount = 3;
+    const d = buildDetail(p),
+      x1 = stirrupLayout(p).first;
+    const crossing = d.bars
+      .filter((b) => b.family === "stitch" || b.family === "lower")
+      .flatMap((b) => b.locations)
+      .filter((loc) => loc.x >= x1 - 1e-6);
+    const sec = sectionBars(p, d, x1);
+    expect(sec.stitches.map((s) => s.depth)).toEqual(
+      crossing.map((loc) => loc.z),
+    );
+  });
+
+  it("modo armado como viga projeta P1 na seção A–A com a profundidade na estação x1", () => {
+    const p = fixture();
+    p.detailing.barArrangement = "beam";
+    const d = buildDetail(p),
+      x1 = stirrupLayout(p).first;
+    const sec = sectionBars(p, d, x1);
+    expect(sec.positives.length).toBeGreaterThan(0);
+    const slope =
+      (p.geometry.height - p.geometry.tipHeight) / p.geometry.length;
+    const expectedDepth =
+      p.geometry.height -
+      slope * x1 -
+      (p.geometry.cover +
+        p.rebar.stirrupDiameter +
+        sec.positives[0].diameter / 2) *
+        Math.sqrt(1 + slope ** 2);
+    expect(sec.positives[0].depth).toBeCloseTo(expectedDepth, 10);
+    const html = render(p, true);
+    expect(html).toContain('data-testid="beam-positive-section"');
   });
 });

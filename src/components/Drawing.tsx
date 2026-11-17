@@ -5,22 +5,18 @@ import {
   projectedConstructiveSection,
 } from "../detailing/transverse";
 import { samplePath } from "../detailing/geometry";
-import { lowerStitchLayout } from "../detailing/model";
+import { buildDetail } from "../detailing/model";
 import { tieLayout } from "../domain/engine";
-import {
-  reactionGeometry,
-  stirrupLayout,
-  upperStitchLayout,
-} from "../domain/theory";
-import { bottomDepth, bottomReach, concreteProfile } from "../domain/profile";
+import { reactionGeometry, stirrupLayout } from "../domain/theory";
+import { bottomDepth, concreteProfile } from "../domain/profile";
 import { useId, useMemo } from "react";
-import {
-  beamArrangementActive,
-  beamBarPositions,
-  beamLayout,
-} from "../detailing/beam";
+import { beamArrangementActive, beamLayout } from "../detailing/beam";
 import { number, type Piece, type GeometryKey } from "../domain/model";
-import { elevationShapes } from "../detailing/projection";
+import {
+  elevationShapes,
+  elevationTiePaths,
+  sectionBars,
+} from "../detailing/projection";
 type Props = {
   piece: Piece;
   section?: boolean;
@@ -133,10 +129,23 @@ export default function Drawing({
   const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
-  const stitchLevels = [
-    ...upperStitchLayout(p, layout).levels,
-    ...lowerStitchLayout(p, layout).levels,
-  ];
+  const sectionX = stirrupLayout(p).first;
+  const detail = useMemo(() => buildDetail(p), [p]);
+  const sectionRebar = useMemo(
+    () => sectionBars(p, detail, sectionX),
+    [p, detail, sectionX],
+  );
+  const elevationTies = useMemo(
+    () => elevationTiePaths(p, detail),
+    [p, detail],
+  );
+  const elevationStitches = useMemo(
+    () =>
+      detail.bars
+        .filter((b) => b.family === "stitch" || b.family === "lower")
+        .flatMap((b) => b.locations),
+    [detail],
+  );
   const beam = useMemo(
     () => (beamArrangementActive(p) ? beamLayout(p) : null),
     [p],
@@ -174,8 +183,8 @@ export default function Drawing({
       );
     return rootSection.stirrupOffset * s + Math.max(clearance, cornerInset);
   };
-  const stitchProjectionFits = stitchLevels.every(
-    (depth) =>
+  const stitchProjectionFits = sectionRebar.stitches.every(
+    ({ depth }) =>
       Math.min(
         depth - rootSection.stirrupOffset,
         rootSection.stirrupOffset + rootSection.sections[0].height - depth,
@@ -189,7 +198,6 @@ export default function Drawing({
   const X = (x: number) => ox + x * s,
     Y = (y: number) => oy + y * s;
   const concrete = concreteProfile(p);
-  const sectionX = stirrupLayout(p).first;
   const sectionHeight = bottomDepth(concrete, sectionX);
   const cut = concrete.status === "removed";
   const bottomPath = [...concrete.bottom]
@@ -361,63 +369,43 @@ export default function Drawing({
                   ))}
                 </g>
                 <g {...groupProps("N1")}>
-                  {layout.rows.flatMap((row, j) =>
-                    Array.from({ length: row.count }, (_, i) => {
-                      const start =
-                        -g.width / 2 +
-                        g.cover +
-                        p.rebar.stirrupDiameter +
-                        p.rebar.tieDiameter / 2;
-                      const span = -2 * start;
-                      return (
-                        <circle
-                          key={`${j}-${i}`}
-                          cx={
-                            400 +
-                            (row.count === 1
-                              ? 0
-                              : start + (span * i) / (row.count - 1)) *
-                              s
-                          }
-                          cy={140 + row.y * s}
-                          r={Math.max(3, (p.rebar.tieDiameter * s) / 2)}
-                          strokeWidth="1"
-                        />
-                      );
-                    }),
-                  )}
+                  {sectionRebar.ties.map(({ v, depth }, i) => (
+                    <circle
+                      key={i}
+                      cx={400 + (v - g.width / 2) * s}
+                      cy={140 + depth * s}
+                      r={Math.max(3, (p.rebar.tieDiameter * s) / 2)}
+                      strokeWidth="1"
+                    />
+                  ))}
                 </g>
                 {beam && (
                   <g
                     className="steel-positive"
                     data-testid="beam-positive-section"
                   >
-                    {beamBarPositions(
-                      p,
-                      beam.bottom.count,
-                      beam.bottom.diameter,
-                    ).map((v, i) => (
+                    {sectionRebar.positives.map(({ v, depth, diameter }, i) => (
                       <circle
                         key={i}
                         cx={400 + (v - g.width / 2) * s}
-                        cy={140 + beam.bottom.depthSupport * s}
-                        r={Math.max(3, (beam.bottom.diameter * s) / 2)}
+                        cy={140 + depth * s}
+                        r={Math.max(3, (diameter * s) / 2)}
                         strokeWidth="1"
                       />
                     ))}
                   </g>
                 )}
                 <g {...groupProps("N2")} strokeWidth={s}>
-                  {stitchLevels.map((y, t) => (
+                  {sectionRebar.stitches.map(({ depth }, t) => (
                     <g key={t}>
                       <circle
-                        cx={sectionLeft + stitchInset(y)}
-                        cy={140 + y * s}
+                        cx={sectionLeft + stitchInset(depth)}
+                        cy={140 + depth * s}
                         r={stitchRadius}
                       />
                       <circle
-                        cx={sectionLeft + g.width * s - stitchInset(y)}
-                        cy={140 + y * s}
+                        cx={sectionLeft + g.width * s - stitchInset(depth)}
+                        cy={140 + depth * s}
                         r={stitchRadius}
                       />
                     </g>
@@ -535,27 +523,12 @@ export default function Drawing({
             {rebar && (
               <>
                 <g {...groupProps("N2")} fill="none" strokeWidth="2">
-                  {stitchLevels.map((y, i) => {
-                    const end = cut
-                      ? bottomReach(
-                          concrete,
-                          y,
-                          g.cover + p.rebar.stitchDiameter / 2,
-                          g.length,
-                        )
-                      : g.height === g.tipHeight
-                        ? g.length
-                        : y <= g.tipHeight
-                          ? g.length
-                          : (g.length * (g.height - y)) /
-                            (g.height - g.tipHeight);
-                    return (
-                      <path
-                        key={i}
-                        d={`M${X(-g.columnWidth + g.cover)} ${Y(y)}H${X(Math.max(0, end - g.cover))}`}
-                      />
-                    );
-                  })}
+                  {elevationStitches.map((loc, i) => (
+                    <path
+                      key={i}
+                      d={`M${X(-p.detailing.stitchEmbedment)} ${Y(loc.z)}H${X(Math.max(0, loc.x))}`}
+                    />
+                  ))}
                 </g>
                 <g {...groupProps("N3")} fill="none" strokeWidth="2">
                   {transverse.sections.map((section, i) => (
@@ -586,18 +559,9 @@ export default function Drawing({
                   strokeWidth="4"
                   strokeLinejoin="round"
                 >
-                  {beam
-                    ? beam.top.map((bar, i) => (
-                        <path key={i} d={polyline(bar.vertices)} />
-                      ))
-                    : layout.rows
-                        .filter((row) => row.count > 0)
-                        .map((row, i) => (
-                          <path
-                            key={i}
-                            d={`M${X(-Math.min(p.design.supportAnchorLength, g.columnWidth - g.cover))} ${Y(row.y)}H${X(g.length - g.cover)}`}
-                          />
-                        ))}
+                  {elevationTies.map((pts, i) => (
+                    <path key={i} d={polyline(pts)} />
+                  ))}
                 </g>
                 {beam && (
                   <path
