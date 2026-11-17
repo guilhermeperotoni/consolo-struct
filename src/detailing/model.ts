@@ -86,6 +86,37 @@ const cm = (mm: number) =>
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
+export function lowerStitchLayout(
+  p: Piece,
+  layout: { d: number; dPrime: number; maxDepth: number },
+) {
+  const g = p.geometry,
+    q = p.design,
+    r = p.rebar;
+  const concrete = concreteProfile(p);
+  const start =
+    upperStitchLayout(p, layout).end +
+    Math.max(20, r.stitchDiameter, 0.5 * q.aggregate) +
+    r.stitchDiameter;
+  const end = bottomOffsetDepth(
+    concrete,
+    g.cover +
+      r.stitchDiameter / 2 +
+      (mandrelDiameter(r.stitchDiameter, p.materials.fykTransverse, true) +
+        r.stitchDiameter) /
+        2,
+    g.cover + r.stitchDiameter / 2,
+  );
+  const count = q.lowerStitchCount;
+  const step = (end - start) / Math.max(count - 1, 1);
+  const levels =
+    count > 0 && end >= start
+      ? Array.from({ length: count }, (_, i) =>
+          count === 1 ? (start + end) / 2 : start + i * step,
+        )
+      : [];
+  return { start, end, step, levels };
+}
 export function buildDetail(piece: Piece): Detail {
   const p = piece,
     g = p.geometry,
@@ -477,20 +508,11 @@ export function buildDetail(piece: Piece): Detail {
       "Não há altura disponível para a costura abaixo de todas as camadas do tirante.",
     );
   addHorizontal(r.stitchCount, stitchStart, stitchEnd, "stitch");
-  const lowerEnd = bottomAt(
-    g.cover +
-      r.stitchDiameter / 2 +
-      (mandrelDiameter(r.stitchDiameter, p.materials.fykTransverse, true) +
-        r.stitchDiameter) /
-        2,
-    g.cover + r.stitchDiameter / 2,
-  );
+  const lowerStitch = lowerStitchLayout(p, layout);
   addHorizontal(
     q.lowerStitchCount,
-    stitchEnd +
-      Math.max(20, r.stitchDiameter, 0.5 * q.aggregate) +
-      r.stitchDiameter,
-    lowerEnd,
+    lowerStitch.start,
+    lowerStitch.end,
     "lower",
   );
   const { offset: transverseOffset, pitch } = stirrupLayout(p);

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import { newPiece, fingerprint } from "../src/domain/model";
-import { cantileverFixture } from "./fixtures";
+import { cantileverFixture, shortFixture } from "./fixtures";
+import { buildDetail } from "../src/detailing/model";
+import { tieLayout } from "../src/domain/engine";
+import { upperStitchLayout } from "../src/domain/theory";
 import { buildSceneModel } from "../src/visualization/model3d";
 import {
   corbelGeometry,
@@ -158,4 +161,28 @@ describe("Viga em balanço (1 < a/d ≤ 2)", () => {
     disposeGroup(group);
     g.dispose();
   });
+});
+describe("Costura inferior N2I (#50)", () => {
+  it.each([
+    ["peça padrão", () => newPiece(1)],
+    ["shortFixture", () => shortFixture()],
+  ])(
+    "alinha as profundidades da N2I no 3D com buildDetail (%s)",
+    (_label, make) => {
+      const p = make();
+      const detailLower = buildDetail(p)
+        .bars.filter((bar) => bar.family === "lower")
+        .map((bar) => bar.locations[0].z);
+      const upperCount = upperStitchLayout(p, tieLayout(p)).levels.length;
+      const sceneLower = buildSceneModel(p)
+        .steel.filter((bar) => bar.id === "N2")
+        .slice(upperCount)
+        .map((bar) => -bar.points[0][2]);
+      expect(detailLower.length).toBeGreaterThan(0);
+      expect(sceneLower).toHaveLength(detailLower.length);
+      sceneLower.forEach((depth, i) => {
+        expect(Math.abs(depth - detailLower[i])).toBeLessThan(1e-9);
+      });
+    },
+  );
 });

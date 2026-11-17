@@ -745,7 +745,7 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
     piece = project.pieces[0];
   Object.assign(piece.geometry, {
     width: 500,
-    height: 600,
+    height: 260,
     length: 250,
     cover: 40,
   });
@@ -755,7 +755,7 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
     stitchCount: 4,
     tieCount: 7,
   });
-  Object.assign(piece.design, { lowerStitchCount: 1, tieLayers: 3 });
+  Object.assign(piece.design, { lowerStitchCount: 0, tieLayers: 3 });
   await page.addInitScript(
     (raw) => localStorage.setItem("consolostruct.project.v1", raw),
     JSON.stringify(project),

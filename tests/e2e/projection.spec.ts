@@ -59,7 +59,7 @@ for (const beam of [false, true])
         .getByRole("button", { name: "Seção A–A", exact: true })
         .click();
       await expect(page.locator(".steel-N4 circle")).toHaveCount(branches);
-      await expect(page.locator(".steel-N2 circle")).toHaveCount(12);
+      await expect(page.locator(".steel-N2 circle")).toHaveCount(16);
       await expect(page.locator('[data-n3-part="grampo"]')).toHaveCount(
         branches === 4 ? 1 : 0,
       );
