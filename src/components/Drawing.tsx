@@ -12,11 +12,7 @@ import {
   stirrupLayout,
   upperStitchLayout,
 } from "../domain/theory";
-import {
-  bottomDepth,
-  bottomReach,
-  concreteProfile,
-} from "../domain/profile";
+import { bottomDepth, bottomReach, concreteProfile } from "../domain/profile";
 import { useId, useMemo } from "react";
 import {
   beamArrangementActive,
@@ -381,7 +377,7 @@ export default function Drawing({
                             (row.count === 1
                               ? 0
                               : start + (span * i) / (row.count - 1)) *
-                            s
+                              s
                           }
                           cy={140 + row.y * s}
                           r={Math.max(3, (p.rebar.tieDiameter * s) / 2)}
@@ -542,17 +538,17 @@ export default function Drawing({
                   {stitchLevels.map((y, i) => {
                     const end = cut
                       ? bottomReach(
-                        concrete,
-                        y,
-                        g.cover + p.rebar.stitchDiameter / 2,
-                        g.length,
-                      )
+                          concrete,
+                          y,
+                          g.cover + p.rebar.stitchDiameter / 2,
+                          g.length,
+                        )
                       : g.height === g.tipHeight
                         ? g.length
                         : y <= g.tipHeight
                           ? g.length
                           : (g.length * (g.height - y)) /
-                          (g.height - g.tipHeight);
+                            (g.height - g.tipHeight);
                     return (
                       <path
                         key={i}
@@ -592,16 +588,16 @@ export default function Drawing({
                 >
                   {beam
                     ? beam.top.map((bar, i) => (
-                      <path key={i} d={polyline(bar.vertices)} />
-                    ))
+                        <path key={i} d={polyline(bar.vertices)} />
+                      ))
                     : layout.rows
-                      .filter((row) => row.count > 0)
-                      .map((row, i) => (
-                        <path
-                          key={i}
-                          d={`M${X(-Math.min(p.design.supportAnchorLength, g.columnWidth - g.cover))} ${Y(row.y)}H${X(g.length - g.cover)}`}
-                        />
-                      ))}
+                        .filter((row) => row.count > 0)
+                        .map((row, i) => (
+                          <path
+                            key={i}
+                            d={`M${X(-Math.min(p.design.supportAnchorLength, g.columnWidth - g.cover))} ${Y(row.y)}H${X(g.length - g.cover)}`}
+                          />
+                        ))}
                 </g>
                 {beam && (
                   <path

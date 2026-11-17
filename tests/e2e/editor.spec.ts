@@ -562,8 +562,11 @@ for (const layers of [1, 3]) {
       name: "Seção transversal do consolo C01",
     });
     await expect(
-      section.getByRole("button", { name: /^Editar [bh] =/ }),
-    ).toHaveCount(2);
+      section.getByRole("button", { name: /^Editar b =/ }),
+    ).toHaveCount(1);
+    await expect(section.getByRole("img", { name: /^h\(x1\) =/ })).toHaveCount(
+      1,
+    );
     await section
       .getByRole("button", { name: "Selecionar armadura N2", exact: true })
       .locator("circle")
@@ -631,9 +634,9 @@ for (const layers of [1, 3]) {
         const box = (await other.boundingBox())!;
         expect(
           text.x + text.width <= box.x ||
-          box.x + box.width <= text.x ||
-          text.y + text.height <= box.y ||
-          box.y + box.height <= text.y,
+            box.x + box.width <= text.x ||
+            text.y + text.height <= box.y ||
+            box.y + box.height <= text.y,
         ).toBe(true);
       }
       await page
@@ -655,7 +658,7 @@ for (const layers of [1, 3]) {
       JSON.parse(await readFile((await (await event).path())!, "utf8")),
     ).toEqual(project);
 
-    for (const key of ["b", "h"]) {
+    for (const key of ["b"]) {
       await section
         .getByRole("button", { name: new RegExp(`^Editar ${key} =`) })
         .click();
