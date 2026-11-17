@@ -123,9 +123,12 @@ export default function Drawing({
   const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
+  const lowerStitchLevels = lowerStitchLayout(p, layout).levels;
+  const lowerStitchMissing =
+    p.design.lowerStitchCount > 0 && lowerStitchLevels.length === 0;
   const stitchLevels = [
     ...upperStitchLayout(p, layout).levels,
-    ...lowerStitchLayout(p, layout).levels,
+    ...lowerStitchLevels,
   ];
   const beam = useMemo(
     () => (beamArrangementActive(p) ? beamLayout(p) : null),
@@ -452,6 +455,17 @@ export default function Drawing({
                   active={focus === "height"}
                 />
               </>
+            )}
+            {rebar && lowerStitchMissing && (
+              <text
+                x={400}
+                y={155 + g.height * s}
+                textAnchor="middle"
+                className="dimension-text"
+                fill="var(--danger)"
+              >
+                N2I sem altura suficiente para distribuir as barras.
+              </text>
             )}
             <text
               className="drawing-caption"

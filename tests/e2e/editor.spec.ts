@@ -755,6 +755,9 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   await expect(page.locator("#piece-drawing")).toContainText(
     "N2 sem espaço no contorno projetado",
   );
+  await expect(page.locator("#piece-drawing")).not.toContainText(
+    "N2I sem altura suficiente",
+  );
   const centers = await page
     .locator(".steel-N2 circle")
     .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
@@ -774,6 +777,34 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   );
 });
 
+test("seção A–A avisa quando a costura inferior solicitada não cabe", async ({
+  page,
+}) => {
+  const project = exampleProject();
+  const piece = project.pieces[0];
+  Object.assign(piece.geometry, { height: 260, cover: 40, loadOffset: 95 });
+  piece.design.lowerStitchCount = 2;
+  expect(buildDetail(piece).issues).toContainEqual(
+    expect.objectContaining({ code: "zone-lower" }),
+  );
+  await page.addInitScript(
+    (raw) => localStorage.setItem("consolostruct.project.v1", raw),
+    JSON.stringify(project),
+  );
+  await page.goto("/");
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Seção A–A", exact: true })
+    .click();
+  const drawing = page.locator("#piece-drawing");
+  await expect(
+    drawing.getByText("N2I sem altura suficiente para distribuir as barras."),
+  ).toBeVisible();
+  await expect(drawing.locator(".steel-N2 circle")).toHaveCount(
+    2 * piece.rebar.stitchCount,
+  );
+});
+
 test("seção A–A da peça padrão usa profundidades N2I do detalhamento e não exibe aviso de falta de espaço", async ({
   page,
 }) => {
@@ -789,7 +820,7 @@ test("seção A–A da peça padrão usa profundidades N2I do detalhamento e nã
     .getByRole("button", { name: "Seção A–A", exact: true })
     .click();
   await expect(page.locator("#piece-drawing")).not.toContainText(
-    "N2 sem espaço no contorno projetado",
+    /N2 sem espaço no contorno projetado|N2I sem altura suficiente/,
   );
   const layout = tieLayout(piece);
   const detailLowerDepths = buildDetail(piece)
