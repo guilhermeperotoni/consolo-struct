@@ -17,7 +17,7 @@ import {
 import { type Bar, type Detail } from "./model";
 import { pinCenters } from "./model";
 import { beamBarPositions } from "./beam";
-import { reactionGeometry } from "../domain/theory";
+import { reactionGeometry, stirrupLayout } from "../domain/theory";
 import { bottomDepth, concreteProfile } from "../domain/profile";
 import { coefficientText, materialSafety } from "../domain/materialSafety";
 import {
@@ -456,20 +456,20 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       "ARMADO COMO VIGA: tirante e positiva com dobras nas duas extremidades.",
       2.2,
     );
-  // Section at the root, common to both concrete geometry and actual tie layer depths.
-  const sectionBar = verticalBars[0];
-  const cutDepth = sectionBar?.locations[0].x ?? 0;
+  // The first scheduled outer stirrup defines the cut, even if its shape is invalid.
+  const cutDepth = stirrupLayout(p).positions[0];
   const sectionH = cut
     ? bottomDepth(concrete, cutDepth) / 10
     : H - (slope * cutDepth) / 10;
   text(sectionX, y - 8, `CORTE A-A / x=${cm(cutDepth)} cm`, 2.8);
   rect(sectionX, y, B, sectionH);
   const sectionPair = transverseGeometry(p, cutDepth);
-  if (sectionPair.branches === 4)
+  const innerSection = sectionPair.sections.find((section) => section.internal);
+  if (innerSection)
     text(
       sectionX,
       y - 4,
-      `N3G projetado de x=${cm(sectionPair.sections[1].x)} cm; N4 no plano de cada ramo`,
+      `N3G projetado de x=${cm(innerSection.x)} cm; N4 no plano de cada ramo`,
       1.8,
     );
   for (const section of sectionPair.sections)
@@ -1080,7 +1080,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   text(10, bottom, "NOTAS DE DETALHAMENTO E CONFERÊNCIA", 2.8);
   const safety = materialSafety(q);
   const notes = [
-    `N3: ${r.stirrupBranches ?? 2} ramos efetivos por posição; ${r.stirrupBranches === 4 ? "estribo externo + grampo interno" : "estribo externo"}. N4: ${r.stirrupBranches ?? 2} barras construtivas Ø${number(r.constructiveDiameter ?? 8, 1)} mm, sem contribuição resistente. N5 fendilhamento e N6 suspensão exigem detalhamento próprio.`,
+    `N3: ${r.stirrupBranches ?? 2} ramos efetivos por posição; ${r.stirrupBranches === 4 ? "estribo externo + estribo interno fechado" : "estribo externo"}. N4: ${r.stirrupBranches ?? 2} barras construtivas Ø${number(r.constructiveDiameter ?? 8, 1)} mm, sem contribuição resistente. N5 fendilhamento e N6 suspensão exigem detalhamento próprio.`,
     `Responsável técnico: ${project.author || "não informado"}. Cliente: ${project.client || "não informado"}. Revisão ${s.revision || "R00"}.`,
     "Desenhos soltos: geometria e formas em centímetros; diâmetros das barras em milímetros. CAD em escala real 1:1; PDF em escala nominal 1:10 ao imprimir a 100%.",
     "Mandris e ganchos: NBR 6118:2026, 9.4.2.3, tabelas 9.1 e 9.2 e 9.4.6.1. Estribos representados pela projeção nominal com fechamento de ganchos fora do plano.",

@@ -18,13 +18,16 @@ import {
   roundedPath,
   steelMass,
   samplePath,
+  pathSamplingError,
   type BarPath,
+  type Point,
 } from "./geometry";
 import { beamArrangementActive, beamLayout, beamBarPositions } from "./beam";
 import type { BarArrangement } from "./settings";
 import {
   constructiveGeometry,
   transverseGeometry,
+  translatePath,
   pathsClash,
 } from "./transverse";
 import { connectionGeometry, pinCenters } from "./connections";
@@ -521,7 +524,7 @@ export function buildDetail(piece: Piece): Detail {
     add({
       family: section.internal ? "stirrupInner" : "stirrup",
       description: section.internal
-        ? "N3 · Grampo interno"
+        ? "N3 · Estribo interno fechado"
         : "N3 · Estribo vertical externo",
       diameter: r.stirrupDiameter,
       grade: p.materials.fykTransverse,
@@ -532,7 +535,7 @@ export function buildDetail(piece: Piece): Detail {
       height: section.height,
       hookExtra: 0,
       hookTail: Math.max(5 * r.stirrupDiameter, 50),
-      note: `${section.internal ? "Grampo interno" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm para o interior` : ""}`,
+      note: `${section.internal ? "Estribo interno fechado" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, justaposto com afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm` : ""}`,
       locations: [{ x: section.x, z: transverseOffset }],
     });
   }
@@ -608,14 +611,14 @@ export function buildDetail(piece: Piece): Detail {
     description: "N4 · Armadura construtiva",
     diameter: constructive.diameter,
     grade: p.materials.fykTransverse,
-    quantity: constructive.branches,
+    quantity: constructive.positions.length,
     path: constructive.path,
     mandrel: constructive.mandrel,
     width: 0,
     height: g.height - g.tipHeight,
     hookTail: constructive.tail,
     hookExtra: 0,
-    note: `${constructive.branches} barras, uma por vértice inferior de N3; dobra frontal e prolongamento no suporte; sem contribuição resistente`,
+    note: `${constructive.positions.length} barras, uma por vértice inferior de N3; dobra frontal e prolongamento no suporte; sem contribuição resistente`,
     locations: constructive.positions.map((v) => ({ x: v, z: 0 })),
   });
   // Segment distances catch crossings between vertices, not only coincident samples.
@@ -626,28 +629,46 @@ export function buildDetail(piece: Piece): Detail {
       pt.y,
     ]),
   );
+  const transversePaths = transverse.sections.map((section) => {
+    // Closing hooks overlap out of plane in the fabrication projection (closedStirrup).
+    // Check the physical perimeter; only chord approximation error is discounted.
+    const outline = translatePath(
+      { ...section.path, segments: section.path.segments.slice(2, -2) },
+      section.offset,
+      transverse.stirrupOffset,
+    );
+    return {
+      points: samplePath(outline, 48).map((pt): [number, number, number] => [
+        section.x,
+        pt.x,
+        pt.y,
+      ]),
+      tolerance: pathSamplingError(outline, 48),
+    };
+  });
   for (const other of bars.filter(
     (b) => b.family === "tie" || b.family === "positive",
   )) {
-    const paths: [number, number, number][][] = [];
+    const paths: { points: [number, number, number][]; tolerance: number }[] =
+      [];
+    const addPath = (
+      path: BarPath,
+      project: (pt: Point) => [number, number, number],
+    ) =>
+      paths.push({
+        points: samplePath(path, 24).map(project),
+        tolerance: pathSamplingError(path, 24),
+      });
     if (beam) {
       for (const v of beamBarPositions(p, other.quantity, other.diameter))
-        paths.push(samplePath(other.path, 24).map((pt) => [pt.x, v, pt.y]));
+        addPath(other.path, (pt) => [pt.x, v, pt.y]);
     } else if (q.frontAnchor === "loop") {
       const inset = (g.width - other.width) / 2;
       for (const loc of other.locations)
-        paths.push(
-          samplePath(other.path, 24).map((pt) => [pt.x, inset + pt.y, loc.z]),
-        );
+        addPath(other.path, (pt) => [pt.x, inset + pt.y, loc.z]);
     } else {
       for (const v of beamBarPositions(p, other.quantity, other.diameter))
-        paths.push(
-          samplePath(other.path, 24).map((pt) => [
-            pt.x,
-            v,
-            other.locations[0].z,
-          ]),
-        );
+        addPath(other.path, (pt) => [pt.x, v, other.locations[0].z]);
     }
     if (!beam && q.supportAnchor === "hook" && other.family === "tie") {
       const inset = q.frontAnchor === "loop" ? (g.width - other.width) / 2 : 0;
@@ -657,23 +678,23 @@ export function buildDetail(piece: Piece): Detail {
           : beamBarPositions(p, other.quantity, other.diameter);
       for (const loc of other.locations)
         for (const v of transverse)
-          paths.push(
-            samplePath(
-              roundedPath(
-                [
-                  { x: -back + mainR, y: loc.z },
-                  { x: -back, y: loc.z },
-                  { x: -back, y: loc.z + mainR + s.supportHookTail },
-                ],
-                mainR,
-              ),
-              24,
-            ).map((pt) => [pt.x, v, pt.y]),
+          addPath(
+            roundedPath(
+              [
+                { x: -back + mainR, y: loc.z },
+                { x: -back, y: loc.z },
+                { x: -back, y: loc.z + mainR + s.supportHookTail },
+              ],
+              mainR,
+            ),
+            (pt) => [pt.x, v, pt.y],
           );
     }
     const minimum = (other.diameter + constructive.diameter) / 2;
     if (
-      n4Paths.some((n4) => paths.some((path) => pathsClash(n4, path, minimum)))
+      n4Paths.some((n4) =>
+        paths.some((path) => pathsClash(n4, path.points, minimum)),
+      )
     )
       issue(
         other.family === "tie"
@@ -682,6 +703,24 @@ export function buildDetail(piece: Piece): Detail {
         other.family === "tie"
           ? "N4 interfere com N1; rever o arranjo sem reduzir cobrimento, bitola ou dobra."
           : "N4 e a positiva P1 do modo viga interferem. Compatibilize o arranjo; ambas foram mantidas e quantificadas separadamente.",
+      );
+    if (
+      other.family === "tie" &&
+      transversePaths.some((stirrup) =>
+        paths.some((path) =>
+          pathsClash(
+            stirrup.points,
+            path.points,
+            (other.diameter + r.stirrupDiameter) / 2 -
+              stirrup.tolerance -
+              path.tolerance,
+          ),
+        ),
+      )
+    )
+      issue(
+        "transverse-tie-clash",
+        "N3/N3G interfere com N1; rever o arranjo sem reduzir cobrimento, bitola ou dobra.",
       );
   }
   if (s.pins > 0) {

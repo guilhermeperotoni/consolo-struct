@@ -122,6 +122,8 @@ describe("Projeções de ligações integradas a N3/N4 (#39)", () => {
     (branches) => {
       const p = fixture();
       p.rebar.stirrupBranches = branches;
+      // Four N1 bars per layer define the physical inner stirrup.
+      p.rebar.tieCount = 8;
       const html = render(p);
       expect(html).toContain('data-quantity="3"');
       expect(html).toContain("PINO · 3 × Ø16,0 mm");

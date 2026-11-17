@@ -172,7 +172,9 @@ test("detalhamento exporta N4 e grampo interno com quantidades e forma", async (
     .getByRole("button", { name: "Detalhamento", exact: true })
     .click();
   await expect(page.locator(".detail-canvas")).toContainText("N4");
-  await expect(page.locator(".detail-canvas")).toContainText("Grampo interno");
+  await expect(page.locator(".detail-canvas")).toContainText(
+    "Estribo interno fechado",
+  );
   await expect(
     page.getByText("Porta-estribos inferior (2 barras)", { exact: true }),
   ).toHaveCount(0);
