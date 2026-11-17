@@ -285,7 +285,7 @@ export default function Drawing({
             {rebar && transverseInvalid && (
               <text
                 x={400}
-                y={104}
+                y={80}
                 textAnchor="middle"
                 className="dimension-text"
                 fill="var(--danger)"

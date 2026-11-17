@@ -61,6 +61,16 @@ test("colisão de 0,828 mm com N1 aparece na seção e no detalhamento", async (
   await expect(page.locator("#piece-drawing")).toContainText(
     "Arranjo N3/N3G inválido para fabricação",
   );
+  const warning = await page
+    .locator("#piece-drawing")
+    .getByText(/Arranjo N3\/N3G inválido para fabricação/)
+    .boundingBox();
+  const widthDimension = await page
+    .getByRole("button", { name: /^Editar b =/ })
+    .boundingBox();
+  expect(warning).not.toBeNull();
+  expect(widthDimension).not.toBeNull();
+  expect(warning!.y + warning!.height).toBeLessThan(widthDimension!.y);
   await page.screenshot({ path: info.outputPath("n3g-colisao.png") });
   await page
     .locator(".document-tabs")
