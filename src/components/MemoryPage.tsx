@@ -11,6 +11,7 @@ function MemoryPage({
   result,
   stale,
   saving,
+  active: _active,
   select,
   calculate,
   exportPdf,
@@ -20,6 +21,7 @@ function MemoryPage({
   result?: CalculationResult;
   stale: boolean;
   saving: boolean;
+  active: boolean;
   select: (id: string) => void;
   calculate: () => void;
   exportPdf: () => void;
@@ -70,4 +72,4 @@ function MemoryPage({
     </section>
   );
 }
-export default memo(MemoryPage);
+export default memo(MemoryPage, (prev, next) => !prev.active && !next.active);

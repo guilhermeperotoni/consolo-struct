@@ -35,7 +35,14 @@ function Detailing({
   const [scope, setScope] = useState<"one" | "all">("one");
   const [busy, setBusy] = useState(false);
   const [settings, setSettings] = useState(true);
-  const key = detailRequestKey(project, piece.id, scope);
+  const key = useMemo(
+    () => detailRequestKey(project, piece.id, scope),
+    [project, piece.id, scope],
+  );
+  const requestProject = useMemo(
+    () => (scope === "one" ? { ...project, pieces: [piece] } : project),
+    [project, piece, scope],
+  );
   const [prepared, setPrepared] = useState<{
     key: string;
     bundle: DetailBundle;
@@ -55,7 +62,7 @@ function Detailing({
     setFailure("");
     const timer = setTimeout(
       () => {
-        void requestDetails(key, project, piece.id, scope)
+        void requestDetails(key, requestProject, piece.id, scope)
           .then((bundle) => {
             if (!disposed) setPrepared({ key, bundle });
           })
@@ -522,4 +529,4 @@ function Detailing({
   );
 }
 
-export default memo(Detailing);
+export default memo(Detailing, (prev, next) => !prev.active && !next.active);

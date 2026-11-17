@@ -98,13 +98,21 @@ function TechnicalViewport({
     if (!m) return;
     const min = (m.top - h / 2 - c.y) / c.zoom + h / 2 - 25 / c.zoom,
       max = (m.bottom - h / 2 - c.y) / c.zoom + h / 2 + 25 / c.zoom;
-    const indices = ss.flatMap((s, i) =>
-      s.y + s.height >= min && s.y <= max ? [i] : [],
-    );
+    let first = -1,
+      last = -1;
+    for (let i = 0; i < ss.length; i++) {
+      const s = ss[i];
+      if (s.y + s.height >= min && s.y <= max) {
+        if (first === -1) first = i;
+        last = i;
+      }
+    }
     const overview = ss.length > 4 && m.scale * c.zoom < 0.8;
-    const key = `${indices.join(",")}/${overview}`;
+    const key = `${first}:${last}/${overview}`;
     if (key !== visibleKey.current) {
       visibleKey.current = key;
+      const indices: number[] = [];
+      if (first !== -1) for (let i = first; i <= last; i++) indices.push(i);
       setVisible({ indices, overview });
     }
   };
@@ -260,6 +268,20 @@ function TechnicalViewport({
           schedule();
         }}
         onPointerUp={(e) => {
+          const d = drag.current;
+          if (d && d.id === e.pointerId) {
+            const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+              d.inverse,
+            );
+            if (p.x !== d.x || p.y !== d.y) {
+              camera.current = {
+                ...camera.current,
+                x: camera.current.x + p.x - d.x,
+                y: camera.current.y + p.y - d.y,
+              };
+              schedule();
+            }
+          }
           drag.current = null;
           if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
