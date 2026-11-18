@@ -5,12 +5,14 @@ import { ENGINE_VERSION, type CalculationResult } from "../domain/engine";
 import CalculationReport from "./CalculationReport";
 import BrandSignature from "./BrandSignature";
 import { steelBondDescription, steelLabel } from "../domain/steel";
+import { retainedDocumentEqual } from "../lib/retainedDocument";
 function MemoryPage({
   project,
   piece: p,
   result,
   stale,
   saving,
+  active: _active,
   select,
   calculate,
   exportPdf,
@@ -20,6 +22,7 @@ function MemoryPage({
   result?: CalculationResult;
   stale: boolean;
   saving: boolean;
+  active: boolean;
   select: (id: string) => void;
   calculate: () => void;
   exportPdf: () => void;
@@ -70,4 +73,4 @@ function MemoryPage({
     </section>
   );
 }
-export default memo(MemoryPage);
+export default memo(MemoryPage, retainedDocumentEqual);
