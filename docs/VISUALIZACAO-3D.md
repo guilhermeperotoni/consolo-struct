@@ -29,6 +29,8 @@ As cotas permanecem orientadas à tela. Quando sua projeção fica reduzida a um
 - O retângulo do apoio indica a área efetiva de transmissão. A altura da linha de H é usada para a origem das setas; ela não é transformada em uma espessura física desconhecida do aparelho.
 - As armaduras são as barras físicas da fonte única do detalhamento (`detailing/rebarModel.ts`), com os mesmos eixos, arcos, alças, dobras e ganchos: N1 em alça ou reta com gancho de suporte, N1/P1 do modo viga, N2/N2I com a penetração no suporte e o alcance frontal do detalhamento, N3/N3G, N4, a barra transversal soldada TS e os pinos. Uma alça descartada no detalhamento também não aparece no 3D. N5/N6 não têm representação completa. A visualização não certifica o arranjo ou libera execução.
 
+Os ganchos de fechamento dos estribos aparecem na forma nominal de fabricação. A compatibilização das extremidades que se sobrepõem fora do plano requer conferência no projeto de conjunto.
+
 ## Cargas e interpretação
 
 As setas mostram a combinação Principal **como informada no projeto**. Valores característicos recebem Vk; valores já de cálculo recebem Vd. A força horizontal é identificada como adicional ou total conforme a convenção escolhida nas propriedades. O sinal informado determina o sentido da seta horizontal; a convenção resistente que desconsidera H favorável continua sendo aplicada no motor.

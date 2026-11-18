@@ -173,7 +173,7 @@ test("alternância de escopo, troca de peça, pan com soltura e exportações SV
 
 test("volume de concreto e taxa de aço do detalhamento coincidem com a modelagem (#63)", async ({
   page,
-}) => {
+}, testInfo) => {
   const canvas = page.locator(".detail-canvas");
   await expect(canvas).toContainText("Taxa de aço");
   const concrete = page.getByTestId("detail-concrete");
@@ -181,8 +181,29 @@ test("volume de concreto e taxa de aço do detalhamento coincidem com a modelage
   const detailVolume = (await concrete.textContent())!.match(
     /Concreto: ([\d,]+)/,
   )![1];
-  await expect(page.getByTestId("detail-steel-rate")).toContainText("kg/m³");
+  const steelRate = page.getByTestId("detail-steel-rate");
+  await expect(steelRate).toContainText("kg/m³");
+  const rate = (await steelRate.textContent())!.match(
+    /Taxa de aço: ([\d,]+)/,
+  )![1];
   await expect(canvas).toContainText(`Concreto por peça: ${detailVolume} m³`);
+  await expect(canvas).toContainText(`Taxa de aço: ${rate} kg/m³`);
+  const screenshot = testInfo.outputPath("fonte-unica-armaduras.png");
+  await page.screenshot({ path: screenshot });
+  await testInfo.attach("fonte-unica-armaduras", {
+    path: screenshot,
+    contentType: "image/png",
+  });
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Memória", exact: true })
+    .click();
+  await expect(page.getByTestId("memory-consumption")).toContainText(
+    `concreto ${detailVolume} m³`,
+  );
+  await expect(page.getByTestId("memory-consumption")).toContainText(
+    `taxa de aço ${rate} kg/m³`,
+  );
   await page
     .locator(".document-tab-open")
     .filter({ hasText: "Elevação" })

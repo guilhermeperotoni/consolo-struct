@@ -8,7 +8,7 @@ import {
   POLICY,
 } from "../domain/engine";
 import { area, number, type Piece, type Project } from "../domain/model";
-import { concreteProfile, pieceVolume } from "../domain/profile";
+import { concreteProfile } from "../domain/profile";
 import { steelBondDescription, steelLabel } from "../domain/steel";
 import {
   gammaNDecision,
@@ -214,10 +214,16 @@ export function toCsv(project: Project) {
       "Piso de referencia gamma n",
       "Justificativa informada gamma n",
     );
+  rows[1].push(
+    "N1 ramos detalhados por peca",
+    "Aco detalhado total (kg)",
+    "Taxa de aco detalhado (kg/m3)",
+  );
   for (const p of project.pieces) {
     const r = calculate(p);
     // N4 as placed in the single reinforcement source (same as the sheet).
-    const n4 = rebarModel(p).bars.find((b) => b.family === "constructive");
+    const rebar = rebarModel(p, r.values);
+    const n4 = rebar.bars.find((b) => b.family === "constructive");
     rows.push([
       p.name,
       p.description,
@@ -231,7 +237,7 @@ export function toCsv(project: Project) {
       p.rebar.tieCount,
       p.rebar.tieDiameter,
       number(area(p.rebar.tieCount, p.rebar.tieDiameter) / 100, 2),
-      number(pieceVolume(p) * p.quantity, 3),
+      number(rebar.totalConcreteVolume, 3),
       r.status,
       r.values.tieRequired === undefined
         ? ""
@@ -269,6 +275,9 @@ export function toCsv(project: Project) {
             p.design.gammaNJustification ?? "",
           ]
         : []),
+      rebar.tieRows.reduce((sum, row) => sum + row.detailedCount, 0),
+      number(rebar.totalMass, 2),
+      number(rebar.steelRate, 1),
     ]);
   }
   return "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n");
@@ -407,7 +416,7 @@ export async function toPdf(project: Project, p: Piece): Promise<Uint8Array> {
       `Concreto excedente: remover. Situacao: ${concreteProfile(p).status === "removed" ? "recorte aplicado abaixo da biela" : "recorte nao aplicado, geometria original"}; ver nota excessConcrete.`,
     );
   line(
-    `fck=${p.materials.fck} MPa; fyk=${p.materials.fyk} MPa. N1=${p.rebar.tieCount} ramos phi ${p.rebar.tieDiameter}; N2=${p.rebar.stitchCount} estribos phi ${p.rebar.stitchDiameter}; N3=${p.rebar.stirrupCount} posicoes, ${p.rebar.stirrupBranches ?? 2} ramos efetivos, phi ${p.rebar.stirrupDiameter}; N4=${p.rebar.stirrupBranches ?? 2} barras phi ${p.rebar.constructiveDiameter ?? 8}, sem contribuicao resistente.`,
+    `fck=${p.materials.fck} MPa; fyk=${p.materials.fyk} MPa. Armaduras informadas no calculo: N1=${p.rebar.tieCount} ramos phi ${p.rebar.tieDiameter}; N2=${p.rebar.stitchCount} estribos phi ${p.rebar.stitchDiameter}; N3=${p.rebar.stirrupCount} posicoes, ${p.rebar.stirrupBranches ?? 2} ramos por posicao, phi ${p.rebar.stirrupDiameter}.`,
   );
   line(
     `Tirante: ${steelLabel(p.materials.fyk)}; transversal: ${steelLabel(p.materials.fykTransverse)}.`,
@@ -417,7 +426,7 @@ export async function toPdf(project: Project, p: Piece): Promise<Uint8Array> {
     `Acoes principais: V=${num(p.loads.vertical)} N; H=${num(p.loads.horizontal)} N; gammaf=${p.loads.gamma}. Os parametros completos constam do apendice.`,
   );
   // N4 and the quantities come from the single reinforcement source.
-  const rebar = rebarModel(p);
+  const rebar = rebarModel(p, result.values);
   const n4 = rebar.bars.find((b) => b.family === "constructive");
   const n4Count = n4?.quantity ?? 0;
   line(
@@ -429,6 +438,22 @@ export async function toPdf(project: Project, p: Piece): Promise<Uint8Array> {
   line(
     `Consumo por peca: concreto ${number(rebar.concreteVolume, 3)} m3; aco detalhado ${number(rebar.mass, 2)} kg; taxa de aco ${number(rebar.steelRate, 1)} kg/m3. Total (${p.quantity} pecas): concreto ${number(rebar.totalConcreteVolume, 3)} m3; aco ${number(rebar.totalMass, 2)} kg.`,
   );
+  const detailedTies = rebar.tieRows.reduce(
+    (sum, row) => sum + row.detailedCount,
+    0,
+  );
+  if (detailedTies !== p.rebar.tieCount)
+    line(
+      `N1 no detalhamento: ${detailedTies} de ${p.rebar.tieCount} ramos informados.`,
+      10,
+      true,
+    );
+  if (rebar.issues.some(({ severity }) => severity === "error"))
+    line(
+      "Consumo com pendencias impeditivas. Consulte o Detalhamento.",
+      10,
+      true,
+    );
   title("3. Envelope de verificacoes");
   line(
     `Combinacao determinante da area do tirante: ${result.governingCase || "--"}. Cada verificacao e envelopada separadamente; nao se misturam V e H de casos diferentes.`,

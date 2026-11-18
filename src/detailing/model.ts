@@ -19,7 +19,6 @@ import {
   steelMass,
   samplePath,
   pathSamplingError,
-  pathLength,
   type BarPath,
 } from "./geometry";
 import { beamArrangementActive, beamLayout, beamBarPositions } from "./beam";
@@ -30,9 +29,10 @@ import {
   translatePath,
   pathsClash,
 } from "./transverse";
-import { connectionGeometry, pinCenters } from "./connections";
+import { connectionGeometry } from "./connections";
 import {
   partPoints3,
+  pathExtent,
   placed,
   type BarInstance,
   type PlacedPath,
@@ -115,7 +115,9 @@ export type RebarGeometry = RebarQuantities & {
   bars: Bar[];
   issues: DetailIssue[];
   arrangement: BarArrangement;
-  tieRows: ReturnType<typeof tieLayout>["rows"];
+  tieRows: (ReturnType<typeof tieLayout>["rows"][number] & {
+    detailedCount: number;
+  })[];
 };
 export type Detail = RebarGeometry & {
   result: CalculationResult;
@@ -281,7 +283,9 @@ export function buildRebarGeometry(
       issues.push({ code, message, severity });
   };
   geometryErrors(p).forEach((message, i) => issue(`geometry-${i}`, message));
-  const add = (b: Omit<Bar, "mark" | "exactLength" | "cutLength" | "role">) => {
+  const add = (
+    b: Omit<Bar, "mark" | "exactLength" | "cutLength" | "role" | "quantity">,
+  ) => {
     const exactLength = b.path.length + b.hookExtra;
     if (!Number.isFinite(exactLength) || exactLength <= 0 || !b.path.valid) {
       issue(
@@ -290,6 +294,9 @@ export function buildRebarGeometry(
       );
       return;
     }
+    const quantity = b.instances.length;
+    if (!quantity) return;
+    const cutLength = Math.ceil(exactLength - 1e-7);
     const key = JSON.stringify([
       b.family,
       b.grade,
@@ -297,6 +304,7 @@ export function buildRebarGeometry(
       rounded(b.width),
       rounded(b.height),
       rounded(exactLength),
+      cutLength,
       b.note,
     ]);
     const existing = bars.find(
@@ -308,11 +316,12 @@ export function buildRebarGeometry(
           rounded(x.width),
           rounded(x.height),
           rounded(x.exactLength),
+          x.cutLength,
           x.note,
         ]) === key,
     );
     if (existing) {
-      existing.quantity += b.quantity;
+      existing.quantity += quantity;
       existing.locations.push(...b.locations);
       existing.instances.push(...b.instances);
       // Merged positions keep a spacing only when it is the same in both.
@@ -322,8 +331,9 @@ export function buildRebarGeometry(
         ...b,
         mark: "",
         role: familyRole[b.family],
+        quantity,
         exactLength,
-        cutLength: Math.ceil(exactLength - 1e-7),
+        cutLength,
       });
   };
   const beam = beamArrangementActive(p);
@@ -420,7 +430,6 @@ export function buildRebarGeometry(
           description: "Tirante (negativa) dobrado",
           diameter: r.tieDiameter,
           grade: p.materials.fyk,
-          quantity: row.count,
           path: beamTop.path,
           mandrel: beamTop.mandrel,
           width: 0,
@@ -506,7 +515,6 @@ export function buildRebarGeometry(
             description: "Tirante em alça",
             diameter: r.tieDiameter,
             grade: p.materials.fyk,
-            quantity: 1,
             path,
             mandrel: d,
             width,
@@ -560,7 +568,6 @@ export function buildRebarGeometry(
           description: "Tirante reto",
           diameter: r.tieDiameter,
           grade: p.materials.fyk,
-          quantity: row.count,
           path,
           mandrel: mainD,
           width: 0,
@@ -600,7 +607,6 @@ export function buildRebarGeometry(
           description: "Barra transversal soldada",
           diameter: q.weldedBarDiameter,
           grade: p.materials.fyk,
-          quantity: 1,
           path: roundedPath(
             [
               { x: 0, y: 0 },
@@ -701,19 +707,6 @@ export function buildRebarGeometry(
           "A penetração da costura no suporte é incompatível com a sua dimensão e cobrimento.",
         );
       const path = closedStirrup(depth, width, r.stitchDiameter, mandrel);
-      // closedStirrup draws both 135° closing hooks for fabrication; they lap
-      // out of plane. The placed bar is the perimeter with the outer 90° part
-      // of the closing corner, so cuts do not count the tails as extra legs.
-      const closing = path.segments.at(-2)!;
-      const perimeter = [
-        ...path.segments.slice(2, -2),
-        closing.type === "arc" ? { ...closing, sweep: -Math.PI / 2 } : closing,
-      ];
-      const outline: BarPath = {
-        ...path,
-        segments: perimeter,
-        length: pathLength(perimeter),
-      };
       const hookTail = Math.max(5 * r.stitchDiameter, 50);
       add({
         family,
@@ -721,7 +714,6 @@ export function buildRebarGeometry(
           family === "stitch" ? "Costura superior" : "Costura inferior",
         diameter: r.stitchDiameter,
         grade: p.materials.fykTransverse,
-        quantity: 1,
         path,
         mandrel,
         width: depth,
@@ -744,7 +736,7 @@ export function buildRebarGeometry(
             placed(
               "xy",
               z,
-              translatePath(outline, -embedment, (g.width - width) / 2),
+              translatePath(path, -embedment, (g.width - width) / 2),
             ),
           ]),
         ],
@@ -782,7 +774,20 @@ export function buildRebarGeometry(
     "lower",
   );
   const { offset: transverseOffset, pitch } = stirrupLayout(p);
-  const transverse = transverseGeometry(p);
+  // A horizontal loop contributes the axes of its two longitudinal legs.
+  // Only placed ties can define the width of the matching N3G.
+  const tieRows = layout.rows.map((row) => ({ ...row, detailedCount: 0 }));
+  const firstLayerPositions: number[] = [];
+  for (const bar of bars.filter((bar) => bar.family === "tie"))
+    bar.instances.forEach(({ parts: [body] }, index) => {
+      const layer = bar.locations[index].layer!;
+      const positions =
+        body.plane === "xy" ? pathExtent(body.path, "y") : [body.at];
+      tieRows[layer].detailedCount += positions.length;
+      if (layer === 0) firstLayerPositions.push(...positions);
+    });
+  firstLayerPositions.sort((a, b) => a - b);
+  const transverse = transverseGeometry(p, undefined, firstLayerPositions);
   transverse.problems.forEach(({ code, message }) => issue(code, message));
   for (const section of transverse.sections) {
     const hookTail = Math.max(5 * r.stirrupDiameter, 50);
@@ -793,7 +798,6 @@ export function buildRebarGeometry(
         : "N3 · Estribo vertical externo",
       diameter: r.stirrupDiameter,
       grade: p.materials.fykTransverse,
-      quantity: 1,
       path: section.path,
       mandrel: transverse.mandrel,
       width: section.width,
@@ -807,17 +811,20 @@ export function buildRebarGeometry(
       ],
       locations: [{ x: section.x, z: transverseOffset }],
       instances: [
-        instance([
-          placed(
-            "yz",
-            section.x,
-            translatePath(
-              section.path,
-              section.offset,
-              transverse.stirrupOffset,
+        {
+          ...instance([
+            placed(
+              "yz",
+              section.x,
+              translatePath(
+                section.path,
+                section.offset,
+                transverse.stirrupOffset,
+              ),
             ),
-          ),
-        ]),
+          ]),
+          ...(section.internal ? { pairedWith: section.pairedWith } : {}),
+        },
       ],
     });
   }
@@ -856,7 +863,6 @@ export function buildRebarGeometry(
       description: "Armadura positiva dobrada",
       diameter: bottom.diameter,
       grade: p.materials.fyk,
-      quantity: bottom.count,
       path: bottom.path,
       mandrel: bottom.mandrel,
       width: 0,
@@ -885,7 +891,7 @@ export function buildRebarGeometry(
       "review",
     );
   }
-  const constructive = constructiveGeometry(p);
+  const constructive = constructiveGeometry(p, transverse);
   constructive.problems.forEach((message, i) =>
     issue(`constructive-fit-${i}`, message),
   );
@@ -904,7 +910,6 @@ export function buildRebarGeometry(
     description: "N4 · Armadura construtiva",
     diameter: constructive.diameter,
     grade: p.materials.fykTransverse,
-    quantity: constructive.positions.length,
     path: constructive.path,
     mandrel: constructive.mandrel,
     width: 0,
@@ -1008,7 +1013,6 @@ export function buildRebarGeometry(
       description: "Pino de ligação",
       diameter: s.pinDiameter,
       grade: 500,
-      quantity: s.pins,
       path: roundedPath(
         [
           { x: 0, y: 0 },
@@ -1064,7 +1068,7 @@ export function buildRebarGeometry(
         "pin-fit",
         "O embutimento do pino ultrapassa a face inferior do consolo.",
       );
-    const centers = pinCenters(p);
+    const centers = pins?.centers ?? [];
     const pinGap =
       centers.length > 1 ? centers[1] - centers[0] - s.pinDiameter : Infinity;
     if (s.pins > 1 && pinGap < Math.max(20, s.pinDiameter, 1.2 * q.aggregate))
@@ -1084,35 +1088,28 @@ export function buildRebarGeometry(
         "pin-pad",
         "Um pino ultrapassa a largura do apoio. Reveja o espaçamento e o deslocamento transversal.",
       );
-    for (const b of bars.filter((b) => b.family === "tie")) {
-      const positions =
-        q.frontAnchor === "loop" && !beam
-          ? [(g.width - b.width) / 2, (g.width + b.width) / 2]
-          : Array.from(
-              { length: b.quantity },
-              (_, i) =>
-                g.cover +
-                r.stirrupDiameter +
-                r.tieDiameter / 2 +
-                (i *
-                  (g.width -
-                    2 * (g.cover + r.stirrupDiameter) -
-                    r.tieDiameter)) /
-                  Math.max(b.quantity - 1, 1),
-            );
-      if (
-        b.locations.some((loc) => loc.z <= s.pinEmbedment) &&
-        positions.some((v) =>
-          centers.some(
-            (c) => Math.abs(c - v) < (s.pinDiameter + b.diameter) / 2,
-          ),
-        )
-      )
-        issue(
-          "pin-tie-clash",
-          "Há interferência geométrica entre pino e tirante. Ajuste o espaçamento ou o deslocamento transversal dos pinos.",
-        );
-    }
+    const pinAxes =
+      bars
+        .find((bar) => bar.family === "pin")
+        ?.instances.map(({ parts: [axis] }) => point3(axis)) ?? [];
+    const tieClash = bars.some(
+      (bar) =>
+        bar.family === "tie" &&
+        bar.instances.some(({ parts }) =>
+          parts.some((part) => {
+            const path = point3(part);
+            const clearance =
+              (s.pinDiameter + bar.diameter) / 2 -
+              pathSamplingError(part.path, 24);
+            return pinAxes.some((axis) => pathsClash(axis, path, clearance));
+          }),
+        ),
+    );
+    if (tieClash)
+      issue(
+        "pin-tie-clash",
+        "Há interferência geométrica entre pino e tirante. Ajuste o espaçamento ou o deslocamento transversal dos pinos.",
+      );
     for (const b of bars.filter((b) => b.family === "stirrup"))
       if (
         b.locations.some(
@@ -1141,7 +1138,7 @@ export function buildRebarGeometry(
     bars,
     issues,
     arrangement: beam ? "beam" : "consolo",
-    tieRows: layout.rows,
+    tieRows,
     ...rebarQuantities(p, bars),
   };
 }

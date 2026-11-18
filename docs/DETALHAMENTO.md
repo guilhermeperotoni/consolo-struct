@@ -16,7 +16,7 @@ O módulo produz desenhos locais soltos: elevação de armaduras, planta dos tir
 - As bitolas permanecem em **mm**. Dimensões de formas, posições, mandris, cobrimentos e comprimentos de corte são em **cm**.
 - O DXF contém LINE, ARC, CIRCLE e TEXT editáveis, com camadas FORMAS, ARMADURAS, COTAS, TEXTOS, EIXOS e ALERTAS. As cotas são linhas e textos explícitos; não são restrições paramétricas nativas do CAD.
 - A geometria e as formas estão a 1:1 em cm no DXF. O PDF usa uma página de dimensão livre por tipo e uma página adicional de resumo quando todos são gerados. Sua escala nominal é 1:10 ao imprimir em tamanho real, sem “ajustar à página”.
-- Os cortes identificam sua coordenada x. A-A atravessa o primeiro estribo vertical; B-B atravessa o centro do apoio. As costuras horizontais aparecem como seções de barras onde cruzam o plano do corte.
+- Os cortes identificam sua coordenada x. A–A atravessa o primeiro estribo vertical e B–B atravessa o centro do apoio. As costuras horizontais aparecem nos cruzamentos com o plano ou como segmentos quando pertencem ao plano. O corte usa o perímetro de N2/N2I conforme a convenção de representação dos ganchos.
 - As barras do pilar não são inferidas: o suporte aparece como fragmento, com indicação de interrupção. Sua compatibilização pertence ao projeto de conjunto.
 
 ## Tirante simples e duplo
@@ -26,6 +26,8 @@ O módulo produz desenhos locais soltos: elevação de armaduras, planta dos tir
 Uma alça horizontal em U fornece **dois ramos longitudinais**. Portanto, quatro ramos não são quatro alças: são duas barras físicas em U, distribuídas conforme as camadas escolhidas. Cada camada deve ter contagem par. O quadro conta barras físicas. As camadas e formas diferentes têm posições próprias, com o diâmetro interno frontal da segunda camada configurável; zero repete o valor principal.
 
 As alças de uma mesma camada são aninhadas, respeitando mandris, cobrimento, distância livre e espaçamento máximo entre ramos. Uma combinação que não cabe recebe pendência impeditiva, sem diminuir o mandril para produzir uma aparência de solução. Na ancoragem soldada, os ramos retos e a barra transversal são quantificados separadamente; as soldas precisam de sua especificação e verificação.
+
+A prancha identifica os ramos detalhados e indica a quantidade informada quando há diferença. O quadro, a planta e o 3D usam as barras que o gerador conseguiu posicionar. O CSV geral conserva os dados do cálculo e acrescenta os ramos detalhados de N1, a massa total de aço detalhado e a taxa de aço por metro cúbico de concreto. O tratamento de divergências pelo motor é acompanhado na issue #64.
 
 ## N3 de dois/quatro ramos e N4 construtiva
 

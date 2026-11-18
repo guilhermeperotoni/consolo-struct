@@ -109,8 +109,16 @@ describe("Geometria técnica 3D", () => {
       detailed.reduce((n, bar) => n + bar.quantity, 0),
     );
     expect(loops.map((b) => b.points[0][2])).toEqual([-41.3, -81.3]);
-    for (const path of m.steel.filter((b) => b.id === "N2"))
-      expect(path.points[0]).toEqual(path.points.at(-1));
+    for (const path of m.steel.filter((b) => b.id === "N2")) {
+      const start = path.points[0];
+      const end = path.points.at(-1)!;
+      // The two 135° closing tails end one centre-line diameter apart in
+      // the nominal projection. A closed rectangle drops both tails.
+      expect(Math.hypot(start[0] - end[0], start[1] - end[1])).toBeCloseTo(
+        4 * path.diameter,
+        8,
+      );
+    }
   });
   it("gera materiais e grupos finitos nas duas opções de renderização", () => {
     const m = buildSceneModel(newPiece(1));

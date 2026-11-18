@@ -24,6 +24,8 @@ export type BarInstance = {
   parts: PlacedPath[];
   /** Transverse family that physically carries this bar (N4 in a N3/N3G corner). */
   host?: "stirrup" | "stirrupInner";
+  /** Outer N3 station of an N3G drawn in its own longitudinal plane. */
+  pairedWith?: number;
 };
 export type ViewShape =
   | { kind: "path"; path: BarPath }
@@ -116,7 +118,10 @@ function crossings(segments: Segment[], x: number) {
     if (s.type === "line") {
       if (Math.abs(s.b.x - s.a.x) < 1e-8) {
         // A run along v at u = x lies in the cut plane.
-        if (Math.abs(x - s.a.x) < EPS) lines.push([s.a.y, s.b.y]);
+        if (Math.abs(x - s.a.x) < EPS) {
+          if (Math.abs(s.b.y - s.a.y) < EPS) add(s.a.y);
+          else lines.push([s.a.y, s.b.y]);
+        }
       } else {
         const t = (x - s.a.x) / (s.b.x - s.a.x);
         if (t >= -1e-8 && t <= 1 + 1e-8) add(s.a.y + t * (s.b.y - s.a.y));

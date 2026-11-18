@@ -1,4 +1,5 @@
 import type { Piece } from "../domain/model";
+import { closedStirrupPerimeter } from "./geometry";
 import {
   buildRebarGeometry,
   familyMark,
@@ -34,7 +35,10 @@ const CACHE_SIZE = 24;
 /** Pure geometry model of one piece, memoized by its complete content.
  * Any edited input changes the key, so a stale model is never reused. It does
  * not run the ELU engine, except for the beam arrangement (anchored bends). */
-export function rebarModel(p: Piece): RebarModel {
+export function rebarModel(
+  p: Piece,
+  currentValues?: Record<string, number>,
+): RebarModel {
   const key = JSON.stringify(p);
   const hit = cache.get(key);
   if (hit) {
@@ -42,7 +46,8 @@ export function rebarModel(p: Piece): RebarModel {
     cache.set(key, hit);
     return hit;
   }
-  const model = buildRebarGeometry(p);
+  // A cached entry is a snapshot for this key even if a caller edits p in place.
+  const model = buildRebarGeometry(structuredClone(p), currentValues);
   cache.set(key, model);
   if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   return model;
@@ -85,31 +90,33 @@ export function projectPlan(src: RebarSource): ViewItem[] {
 export type SectionItem = Placed & { cut: SectionCut };
 /** Bars of the transverse plane x, in section coordinates (y, z).
  *
- * Only parts whose 3D path meets the plane are returned. With `pairWindow`,
- * stirrups whose own plane lies within that distance are projected onto the
- * section (the juxtaposed N3/N3G pair), and bars hosted by a stirrup (N4) are
- * cut in the plane of their host, as fabricated. */
+ * By default the section uses the nominal paths shown in 3D. With `pairWindow`,
+ * the N3G paired to this N3 is projected and its N4 is cut in the N3G plane.
+ * The drafting convention for N2/N2I can request their perimeter so the
+ * nominal lap of the closing hooks is not counted as extra cut legs. */
 export function intersectSectionX(
   src: RebarSource,
   x: number,
-  { pairWindow = 0 }: { pairWindow?: number } = {},
+  {
+    pairWindow = 0,
+    stitchPerimeter = false,
+  }: { pairWindow?: number; stitchPerimeter?: boolean } = {},
 ): SectionItem[] {
   const items = placedParts(src);
-  const window = pairWindow + 1e-6;
-  const stations = (family: BarInstance["host"]) =>
-    items
-      .filter(
-        ({ bar, part }) =>
-          bar.family === family &&
-          part.plane === "yz" &&
-          Math.abs(part.at - x) <= window,
-      )
-      .map(({ part }) => part.at)
-      .sort((a, b) => Math.abs(a - x) - Math.abs(b - x));
+  const paired =
+    pairWindow > 0
+      ? items.find(
+          ({ bar, instance, part }) =>
+            bar.family === "stirrupInner" &&
+            instance.pairedWith !== undefined &&
+            Math.abs(instance.pairedWith - x) < 1e-6 &&
+            Math.abs(part.at - x) <= pairWindow + 1e-6,
+        )
+      : undefined;
   return items.flatMap((item) => {
-    const { part, instance } = item;
+    const { bar, part, instance } = item;
     if (part.plane === "yz") {
-      if (Math.abs(part.at - x) > window) return [];
+      if (Math.abs(part.at - x) >= 1e-6 && item !== paired) return [];
       return [
         {
           ...item,
@@ -118,8 +125,12 @@ export function intersectSectionX(
       ];
     }
     const station =
-      pairWindow > 0 && instance.host ? (stations(instance.host)[0] ?? x) : x;
-    const cut = cutPart(part, station);
+      paired && instance.host === "stirrupInner" ? paired.part.at : x;
+    const sectionPart =
+      stitchPerimeter && (bar.family === "stitch" || bar.family === "lower")
+        ? { ...part, path: closedStirrupPerimeter(part.path) }
+        : part;
+    const cut = cutPart(sectionPart, station);
     return cut.points.length || cut.lines.length ? [{ ...item, cut }] : [];
   });
 }

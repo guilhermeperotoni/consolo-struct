@@ -88,8 +88,8 @@ function Detailing({
   const { details = [], drawings = [], drawing } = bundle ?? {};
   const pieces = scope === "one" ? [piece] : project.pieces;
   const selectedDetail = useMemo(
-    () => details.find((d) => d.piece.id === piece.id),
-    [details, piece.id],
+    () => (ready ? details.find((d) => d.piece.id === piece.id) : undefined),
+    [details, piece.id, ready],
   );
   const exportDetail = async (kind: "dxf" | "pdf" | "svg" | "csv") => {
     if (document.querySelector('[aria-invalid="true"]')) {
@@ -426,8 +426,8 @@ function Detailing({
                 </>
               ) : null}
               <p className="detail-tip">
-                N4 construtiva obrigatória: {piece.rebar.stirrupBranches} barras
-                Ø{number(piece.rebar.constructiveDiameter, 1)} mm. Configure a
+                N4 construtiva prevista: {piece.rebar.stirrupBranches} barras Ø
+                {number(piece.rebar.constructiveDiameter, 1)} mm. Configure a
                 bitola na guia Armaduras; a quantidade vem dos ramos de N3.
               </p>
               <NumericField
@@ -500,36 +500,39 @@ function Detailing({
                   onChange={(e) => patch({ notes: e.target.value })}
                 />
               </label>
-              <div className="detail-totals">
-                <span>{selectedDetail?.bars.length ?? 0} posições</span>
-                <strong>{number(selectedDetail?.mass ?? 0, 2)} kg/pç</strong>
-                <span>
-                  {piece.quantity} peças:{" "}
-                  {number(selectedDetail?.totalMass ?? 0, 2)} kg
-                </span>
-                <span data-testid="detail-concrete">
-                  Concreto: {number(selectedDetail?.concreteVolume ?? 0, 3)}{" "}
-                  m³/pç · total{" "}
-                  {number(selectedDetail?.totalConcreteVolume ?? 0, 3)} m³
-                </span>
-                <span data-testid="detail-steel-rate">
-                  Taxa de aço: {number(selectedDetail?.steelRate ?? 0, 1)} kg/m³
-                </span>
-              </div>
+              {selectedDetail && (
+                <div className="detail-totals">
+                  <span>{selectedDetail.bars.length} posições</span>
+                  <strong>{number(selectedDetail.mass, 2)} kg/pç</strong>
+                  <span>
+                    {selectedDetail.piece.quantity} peças:{" "}
+                    {number(selectedDetail.totalMass, 2)} kg
+                  </span>
+                  <span data-testid="detail-concrete">
+                    Concreto: {number(selectedDetail.concreteVolume, 3)} m³/pç ·
+                    total {number(selectedDetail.totalConcreteVolume, 3)} m³
+                  </span>
+                  <span data-testid="detail-steel-rate">
+                    Taxa de aço: {number(selectedDetail.steelRate, 1)} kg/m³
+                  </span>
+                </div>
+              )}
               <p className="detail-tip">
                 As posições de fabricação (N1, N2…) são próprias de cada peça.
                 Consulte a peça e a posição ao identificar uma barra na obra.
               </p>
-              <details className="detail-issues" open>
-                <summary>
-                  Conferências ({selectedDetail?.issues.length ?? 0})
-                </summary>
-                {selectedDetail?.issues.map((v) => (
-                  <p key={v.code} className={v.severity}>
-                    {v.message}
-                  </p>
-                ))}
-              </details>
+              {selectedDetail && (
+                <details className="detail-issues" open>
+                  <summary>
+                    Conferências ({selectedDetail.issues.length})
+                  </summary>
+                  {selectedDetail.issues.map((v) => (
+                    <p key={v.code} className={v.severity}>
+                      {v.message}
+                    </p>
+                  ))}
+                </details>
+              )}
             </div>
           </aside>
         )}

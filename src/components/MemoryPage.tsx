@@ -29,7 +29,10 @@ function MemoryPage({
   exportPdf: () => void;
 }) {
   // Same quantities as the detailing sheet (single reinforcement source).
-  const rebar = useMemo(() => rebarModel(p), [p]);
+  const rebar = useMemo(
+    () => rebarModel(p, stale ? undefined : result?.values),
+    [p, result, stale],
+  );
   return (
     <section className="full-page report-page">
       <div className="report-selection">
@@ -75,6 +78,11 @@ function MemoryPage({
           {number(rebar.totalConcreteVolume, 3)} m³ e{" "}
           {number(rebar.totalMass, 2)} kg
         </p>
+        {rebar.issues.some(({ severity }) => severity === "error") && (
+          <p className="check-error">
+            Consumo com pendências impeditivas. Consulte o Detalhamento.
+          </p>
+        )}
         <button className="button" onClick={calculate}>
           Calcular revisão atual
         </button>

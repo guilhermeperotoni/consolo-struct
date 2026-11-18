@@ -127,7 +127,11 @@ export function firstLayerTiePositions(p: Piece): number[] {
   return beamBarPositions(p, firstRow.count, r.tieDiameter);
 }
 
-export function transverseGeometry(p: Piece, sectionX?: number) {
+export function transverseGeometry(
+  p: Piece,
+  sectionX?: number,
+  placedTiePositions?: number[],
+) {
   const g = p.geometry,
     r = p.rebar;
   const branches = r.stirrupBranches ?? 2,
@@ -145,7 +149,8 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
     g.cover + r.stirrupDiameter + diameter / 2 + radius * (1 - Math.SQRT1_2);
   const innerCornerOffset =
     r.stirrupDiameter / 2 + diameter / 2 + radius * (1 - Math.SQRT1_2);
-  const tiePositions = branches === 4 ? firstLayerTiePositions(p) : [];
+  const tiePositions =
+    branches === 4 ? (placedTiePositions ?? firstLayerTiePositions(p)) : [];
   const hasCentralTies = tiePositions.length >= 4;
   let innerLeft = 0,
     innerRight = 0;
@@ -177,6 +182,7 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
       bottomOffsetDepth(concrete, x, layout.offset) - layout.offset;
     const outer = {
       x,
+      pairedWith: undefined,
       internal: false,
       width,
       height,
@@ -194,6 +200,7 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
     const path = closedStirrup(w, innerHeight, r.stirrupDiameter, mandrel);
     const inner = {
       x: innerX,
+      pairedWith: x,
       internal: true,
       width: w,
       height: innerHeight,
@@ -276,10 +283,9 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
   };
 }
 
-export function constructiveGeometry(p: Piece) {
+export function constructiveGeometry(p: Piece, t = transverseGeometry(p)) {
   const g = p.geometry,
-    r = p.rebar,
-    t = transverseGeometry(p);
+    r = p.rebar;
   const concrete = concreteProfile(p),
     diameter = t.diameter;
   const nominalMandrel = mandrelDiameter(diameter, p.materials.fykTransverse);

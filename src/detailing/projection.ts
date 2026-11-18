@@ -1,6 +1,6 @@
 import type { Piece } from "../domain/model";
 import type { BarPath, Point } from "./geometry";
-import type { Bar, Detail } from "./model";
+import type { Bar, BarFamily, Detail } from "./model";
 import {
   intersectSectionX,
   projectElevation,
@@ -133,7 +133,10 @@ export function sectionBars(
   sectionX: number,
   options: { pairWindow?: number } = {},
 ) {
-  const items = intersectSectionX(detail, sectionX, options);
+  const items = intersectSectionX(detail, sectionX, {
+    ...options,
+    stitchPerimeter: true,
+  });
   const ties: { v: number; depth: number; diameter: number; mark: string }[] =
     [];
   const addTie = (bar: Bar, v: number, depth: number) => {
@@ -161,7 +164,7 @@ export function sectionBars(
     mark: string;
   }[] = [];
   const lines: {
-    family: "pin" | "welded";
+    family: BarFamily;
     mark: string;
     diameter: number;
     a: Point;
@@ -182,14 +185,17 @@ export function sectionBars(
     mark: string;
   }[] = [];
   for (const { bar, instance, part, cut } of items) {
+    for (const [a, b] of cut.lines)
+      lines.push({
+        family: bar.family,
+        mark: bar.mark,
+        diameter: bar.diameter,
+        a,
+        b,
+      });
     switch (bar.family) {
       case "tie":
         for (const pt of cut.points) addTie(bar, pt.x, pt.y);
-        // A hook leg lying in the plane is shown by its end points.
-        for (const [a, b] of cut.lines) {
-          addTie(bar, a.x, a.y);
-          addTie(bar, b.x, b.y);
-        }
         break;
       case "stitch":
       case "lower":
@@ -213,14 +219,6 @@ export function sectionBars(
         break;
       case "pin":
       case "welded":
-        for (const [a, b] of cut.lines)
-          lines.push({
-            family: bar.family,
-            mark: bar.mark,
-            diameter: bar.diameter,
-            a,
-            b,
-          });
         break;
       case "stirrup":
       case "stirrupInner":

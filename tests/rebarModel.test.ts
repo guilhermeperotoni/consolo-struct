@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as engine from "../src/domain/engine";
-import { exampleProject, number, type Piece } from "../src/domain/model";
+import {
+  exampleProject,
+  newPiece,
+  number,
+  type Piece,
+} from "../src/domain/model";
 import { concreteProfile, pieceVolume } from "../src/domain/profile";
 import { stirrupLayout } from "../src/domain/theory";
 import { buildDetail, buildRebarGeometry } from "../src/detailing/model";
@@ -19,11 +24,17 @@ import { sectionBars } from "../src/detailing/projection";
 import { beamBarPositions } from "../src/detailing/beam";
 import { samplePath } from "../src/detailing/geometry";
 import { pieceDrawing } from "../src/detailing/drawing";
-import { drawingDxf, drawingSvg } from "../src/detailing/exports";
-import { toCsv } from "../src/lib/exports";
+import {
+  drawingDxf,
+  drawingPdf,
+  drawingSvg,
+  steelCsv,
+} from "../src/detailing/exports";
+import { toCsv, toPdf } from "../src/lib/exports";
 import { buildSceneModel } from "../src/visualization/model3d";
 import Drawing from "../src/components/Drawing";
 import { shortFixture } from "./fixtures";
+import { inflateSync } from "node:zlib";
 
 /** Short corbel with every connection family: welded bars, pins and hooks. */
 function curto() {
@@ -108,10 +119,7 @@ describe("Fonte única das armaduras (#63)", () => {
             (sum, part) => sum + part.path.length,
             0,
           );
-          if (bar.family === "stitch" || bar.family === "lower")
-            // Closing 135° tails lap out of plane and are not placed.
-            expect(placedLength).toBeLessThan(bar.exactLength);
-          else expect(placedLength).toBeCloseTo(bar.exactLength, 6);
+          expect(placedLength).toBeCloseTo(bar.exactLength, 6);
         }
       }
     },
@@ -307,6 +315,126 @@ describe("Fonte única das armaduras (#63)", () => {
     );
   });
 
+  it("representa por uma linha o trecho de N2 que pertence ao plano B–B", () => {
+    const p = shortFixture();
+    p.geometry.loadOffset =
+      p.geometry.length - p.geometry.cover - p.rebar.stitchDiameter / 2;
+    p.geometry.tipHeight = p.geometry.height;
+    p.design.bearingLength = 40;
+    const detail = buildDetail(p);
+    const section = sectionBars(p, detail, p.geometry.loadOffset);
+    const spans = section.lines.filter((line) => line.family === "stitch");
+    expect(spans).toHaveLength(p.rebar.stitchCount);
+    expect(section.stitches).toEqual([]);
+    const drawing = pieceDrawing({ ...exampleProject(), pieces: [p] }, detail);
+    const cut = drawing.entities.find(
+      (e) => e.type === "text" && e.text.startsWith("CORTE B-B"),
+    );
+    if (cut?.type !== "text") throw new Error("Corte B–B ausente");
+    for (const { a, b } of spans)
+      expect(
+        drawing.entities.some(
+          (e) =>
+            e.type === "line" &&
+            e.layer === "ARMADURAS" &&
+            close(e.a.x, cut.at.x + a.x / 10) &&
+            close(e.b.x, cut.at.x + b.x / 10) &&
+            close(e.a.y, cut.at.y + 10 + a.y / 10) &&
+            close(e.b.y, cut.at.y + 10 + b.y / 10),
+        ),
+      ).toBe(true);
+  });
+
+  it("projeta no A–A apenas o N3G pareado mesmo com estações congestionadas", () => {
+    const p = curto();
+    p.rebar.stirrupBranches = 4;
+    p.rebar.stirrupCount = 100;
+    const model = rebarModel(p);
+    expect(
+      model.issues.some(({ code }) => code === "transverse-clearance"),
+    ).toBe(true);
+    const x = stirrupLayout(p).positions[0];
+    const bars = sectionBars(p, model, x, {
+      pairWindow: p.rebar.stirrupDiameter,
+    });
+    expect(bars.stirrups.map(({ family, x }) => ({ family, x }))).toEqual([
+      { family: "stirrup", x },
+      { family: "stirrupInner", x: x + p.rebar.stirrupDiameter },
+    ]);
+    expect(bars.constructive.map(({ x }) => x)).toEqual([
+      x,
+      x + p.rebar.stirrupDiameter,
+      x + p.rebar.stirrupDiameter,
+      x,
+    ]);
+  });
+
+  it("distingue os ramos configurados dos desenhados na peça padrão", async () => {
+    const p = newPiece(1);
+    p.quantity = 3;
+    const project = { ...exampleProject(), pieces: [p] };
+    const detail = buildDetail(p);
+    expect(detail.issues.some(({ code }) => code === "nested-loops")).toBe(
+      true,
+    );
+    const svg = drawingSvg(pieceDrawing(project, detail));
+    expect(svg).toContain("2 ramos detalhados em 1 camada(s) (4 informados)");
+    expect(svg).toContain("PENDÊNCIAS IMPEDITIVAS");
+    const csv = csvCells(toCsv(project));
+    const header = csv[1];
+    expect(csv[2][header.indexOf("Tirante (barras)")]).toBe("4");
+    expect(csv[2][header.indexOf("N1 ramos detalhados por peca")]).toBe("2");
+    const schedule = csvCells(steelCsv([detail]));
+    const tie = schedule.find((r) => r[3] === "N1")!;
+    // One physical loop per piece, with two longitudinal legs.
+    expect(tie.slice(7, 9)).toEqual(["1", "3"]);
+    const memory = Buffer.from(await toPdf(project, p)).toString("latin1");
+    expect(memory).toContain("N1 no detalhamento: 2 de 4 ramos informados.");
+    expect(memory).toContain("Consumo com pendencias impeditivas");
+  });
+
+  it("não posiciona N3G sobre um par de ramos N1 descartado por forma inválida", () => {
+    const p = shortFixture();
+    Object.assign(p.geometry, { length: 60, loadOffset: 30 });
+    Object.assign(p.design, { supportAnchorLength: 0, bearingLength: 40 });
+    p.rebar.stirrupBranches = 4;
+    const model = buildRebarGeometry(p);
+    expect(model.issues.some(({ code }) => code === "shape-tie")).toBe(true);
+    expect(
+      model.issues.some(({ code }) => code === "transverse-inner-tie"),
+    ).toBe(true);
+    expect(model.bars.some(({ family }) => family === "stirrupInner")).toBe(
+      false,
+    );
+  });
+
+  it("as curvas tracejadas da costura em planta chegam ao SVG, DXF e PDF", async () => {
+    const p = curto();
+    const project = { ...exampleProject(), pieces: [p] };
+    const drawing = pieceDrawing(project, buildDetail(p));
+    const dashedArc = drawing.entities.find((e) => e.type === "arc" && e.dash);
+    expect(dashedArc).toBeDefined();
+    expect(drawingSvg(drawing)).toMatch(/<path[^>]+stroke-dasharray="2 1"/);
+    expect(drawingDxf(drawing)).toMatch(
+      /0\nARC\n100\nAcDbEntity\n8\nARMADURAS\n6\nTRACEJADO/,
+    );
+    const pdf = Buffer.from(
+      await drawingPdf([{ ...drawing, entities: [dashedArc!] }]),
+    ).toString("latin1");
+    const streams = [...pdf.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)]
+      .map((r) => {
+        try {
+          return inflateSync(Buffer.from(r[1], "latin1")).toString("latin1");
+        } catch {
+          return r[1];
+        }
+      })
+      .join("\n");
+    expect(streams).toMatch(/\[5\.669\d* 2\.834\d*\] 0\.? d/);
+    expect(streams.match(/ m\n/g)).toHaveLength(1);
+    expect(streams.match(/ l\n/g)!.length).toBeGreaterThan(1);
+  });
+
   it.each(cases)(
     "%s: a seção A–A da modelagem desenha exatamente as barras do corte",
     (_name, make) => {
@@ -352,8 +480,17 @@ describe("Fonte única das armaduras (#63)", () => {
         `Concreto por peça: ${number(pieceVolume(p), 3)} m³ · 4 peças: ${number(pieceVolume(p) * 4, 3)} m³ · Taxa de aço: ${number(d.mass / pieceVolume(p), 1)} kg/m³`,
       );
       // Same value as the project CSV (toCsv) and the application status bar.
-      expect(toCsv({ ...exampleProject(), pieces: [p] })).toContain(
-        `"${number(pieceVolume(p) * 4, 3)}"`,
+      const [, header, values] = csvCells(
+        toCsv({ ...exampleProject(), pieces: [p] }),
+      );
+      expect(values[header.indexOf("Volume consolo total (m3)")]).toBe(
+        number(pieceVolume(p) * 4, 3),
+      );
+      expect(values[header.indexOf("Aco detalhado total (kg)")]).toBe(
+        number(d.totalMass, 2),
+      );
+      expect(values[header.indexOf("Taxa de aco detalhado (kg/m3)")]).toBe(
+        number(d.steelRate, 1),
       );
     },
   );
@@ -399,7 +536,18 @@ describe("Fonte única das armaduras (#63)", () => {
     // Mutating the same object in place is also detected.
     p.rebar.stitchDiameter = 8;
     expect(rebarModel(p)).not.toBe(first);
+    expect(first.piece.rebar.stitchDiameter).toBe(6.3);
+    p.rebar.stitchDiameter = 6.3;
+    expect(rebarModel(p)).toBe(first);
   });
 });
 
 const g = (p: Piece) => p.geometry;
+const csvCells = (csv: string) =>
+  csv
+    .split("\r\n")
+    .map((row) =>
+      [...row.matchAll(/"((?:[^"]|"")*)"/g)].map((cell) =>
+        cell[1].replaceAll('""', '"'),
+      ),
+    );
