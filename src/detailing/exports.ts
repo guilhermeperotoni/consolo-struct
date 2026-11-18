@@ -6,7 +6,6 @@ import {
   type Layer,
   segmentPoints,
 } from "./drawing";
-import { steelMass } from "./geometry";
 import { steelLabel } from "../domain/steel";
 import { gammaNDecision, gammaNPolicyLabels } from "../domain/gammaN";
 
@@ -322,17 +321,11 @@ export function steelCsv(details: Detail[]): string {
         steelLabel(b.grade),
         b.diameter,
         b.quantity,
-        b.quantity * d.piece.quantity,
+        b.totalQuantity,
         (b.cutLength / 10).toFixed(1).replace(".", ","),
-        ((b.cutLength * b.quantity * d.piece.quantity) / 10)
-          .toFixed(1)
-          .replace(".", ","),
-        (steelMass(b.cutLength, b.diameter) * b.quantity)
-          .toFixed(3)
-          .replace(".", ","),
-        (steelMass(b.cutLength, b.diameter) * b.quantity * d.piece.quantity)
-          .toFixed(3)
-          .replace(".", ","),
+        (b.totalLength / 10).toFixed(1).replace(".", ","),
+        b.mass.toFixed(3).replace(".", ","),
+        b.totalMass.toFixed(3).replace(".", ","),
         d.issues.some((i) => i.severity === "error")
           ? "Pendências impeditivas"
           : "Para conferência",

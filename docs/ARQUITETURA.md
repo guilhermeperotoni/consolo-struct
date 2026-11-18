@@ -44,6 +44,8 @@ A versão do aplicativo é 0.4.0. O motor mantém a identificação 0.3.0 e a po
 
 ## Fonte única das armaduras
 
+Cada posição registra `totalQuantity`, `totalLength` em mm, `mass` por peça e `totalMass` em kg. A relação de aço, os resumos e as exportações usam esses campos.
+
 Todas as vistas, cortes, quadros e quantitativos de aço/concreto leem a mesma definição de armaduras (issue #63). Nenhum renderizador reconstrói coordenadas de barras.
 
 | Módulo                            | Responsabilidade                                                                                                       |

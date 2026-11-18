@@ -3,7 +3,6 @@ import { number } from "../domain/model";
 import {
   mandrelDiameter,
   samplePath,
-  steelMass,
   type BarPath,
   type Point,
   type Segment,
@@ -718,10 +717,10 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       String(b.grade / 10),
       number(b.diameter, 1),
       String(b.quantity),
-      String(b.quantity * p.quantity),
+      String(b.totalQuantity),
       cm(b.cutLength),
-      cm(b.cutLength * b.quantity * p.quantity),
-      number(steelMass(b.cutLength, b.diameter) * b.quantity * p.quantity, 2),
+      cm(b.totalLength),
+      number(b.totalMass, 2),
     ]),
   ];
   let tableBottom = table(tableX, 49, [15, 16, 19, 20, 22, 35, 47, 31], rows);
@@ -736,8 +735,8 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       ...d.steelSummary.map((v) => [
         grade(v.grade),
         number(v.diameter, 1),
-        cm(v.length * p.quantity),
-        number(v.mass * p.quantity, 2),
+        cm(v.totalLength),
+        number(v.totalMass, 2),
       ]),
     ],
   );
@@ -1009,8 +1008,8 @@ export function steelSummaryDrawing(
           length: 0,
           mass: 0,
         };
-      old.length += v.length * d.piece.quantity;
-      old.mass += v.mass * d.piece.quantity;
+      old.length += v.totalLength;
+      old.mass += v.totalMass;
       summary.set(key, old);
     }
   text(10, 10, "RESUMO GERAL DO AÇO - TODOS OS CONSOLOS", 3.5);
@@ -1032,15 +1031,10 @@ export function steelSummaryDrawing(
         number(v.mass, 2),
       ]),
   ];
-  rows.push([
-    "TOTAL",
-    "",
-    "",
-    number(
-      details.reduce((n, d) => n + d.totalMass, 0),
-      2,
-    ),
-  ]);
+  const totalMass = details.reduce((n, d) => n + d.totalMass, 0);
+  const totalVolume = details.reduce((n, d) => n + d.totalConcreteVolume, 0);
+  const steelRate = totalVolume > 0 ? totalMass / totalVolume : 0;
+  rows.push(["TOTAL", "", "", number(totalMass, 2)]);
   let y = 32;
   for (const row of rows) {
     const xs = [10, 50, 85, 165, 250];
@@ -1076,16 +1070,22 @@ export function steelSummaryDrawing(
   text(
     10,
     y + 8,
-    "Quantidades do projeto já multiplicadas. Sem perdas, emendas ou reserva de compra.",
+    `Concreto total: ${number(totalVolume, 3)} m³ · Taxa de aço do projeto: ${number(steelRate, 1)} kg/m³`,
     2.3,
   );
   text(
     10,
     y + 14,
+    "Quantidades do projeto já multiplicadas. Sem perdas, emendas ou reserva de compra.",
+    2.3,
+  );
+  text(
+    10,
+    y + 20,
     "Identificar cada barra pela peça e pela posição (ex.: C01/N1). Conferir as pendências de cada tipo.",
     2.3,
   );
-  return { width: 270, height: y + 25, entities, name: "Resumo geral do aço" };
+  return { width: 270, height: y + 31, entities, name: "Resumo geral do aço" };
 }
 export function segmentPoints(s: Segment) {
   return samplePath({ segments: [s], length: 0, valid: true }, 20);

@@ -74,6 +74,12 @@ export type Bar = {
   grade: number;
   /** Bars per piece; always equal to `instances.length`. */
   quantity: number;
+  /** Quantity and length (mm) for every copy of the piece. */
+  totalQuantity: number;
+  totalLength: number;
+  /** Mass per piece and for every copy of the piece, kg. */
+  mass: number;
+  totalMass: number;
   /** Fabrication shape (centre line, mm). */
   path: BarPath;
   exactLength: number;
@@ -97,7 +103,13 @@ export type SteelSummaryRow = {
   count: number;
   length: number;
   mass: number;
+  totalLength: number;
+  totalMass: number;
 };
+type ShapedBar = Omit<
+  Bar,
+  "totalQuantity" | "totalLength" | "mass" | "totalMass"
+>;
 /** Steel and concrete quantities of one piece, derived from the same bars. */
 export type RebarQuantities = {
   mass: number;
@@ -144,15 +156,19 @@ export const familyRole: Record<BarFamily, string> = {
   welded: "Ancoragem frontal do tirante por barra transversal soldada",
   pin: "Ligação com a peça apoiada",
 };
-/** Uniform axis spacing of a sorted list of positions. */
-const pitchOf = (positions: number[]) =>
-  positions.length > 1 ? positions[1] - positions[0] : null;
+/** Uniform axis spacing, when the installed sequence has one. */
+function pitchOf(positions: number[]): number | null {
+  if (positions.length < 2) return null;
+  const sorted = [...positions].sort((a, b) => a - b);
+  const pitch = sorted[1] - sorted[0];
+  return pitch > 0 &&
+    sorted.slice(2).every((x, i) => Math.abs(x - sorted[i + 1] - pitch) < 1e-6)
+    ? pitch
+    : null;
+}
 /** Mass, summary and concrete consumption from the bars of one piece. */
 export function rebarQuantities(p: Piece, bars: Bar[]): RebarQuantities {
-  const mass = bars.reduce(
-    (sum, b) => sum + steelMass(b.cutLength, b.diameter) * b.quantity,
-    0,
-  );
+  const mass = bars.reduce((sum, b) => sum + b.mass, 0);
   const steelSummary: SteelSummaryRow[] = [];
   for (const b of bars) {
     let group = steelSummary.find(
@@ -165,17 +181,21 @@ export function rebarQuantities(p: Piece, bars: Bar[]): RebarQuantities {
         count: 0,
         length: 0,
         mass: 0,
+        totalLength: 0,
+        totalMass: 0,
       };
       steelSummary.push(group);
     }
     group.count += b.quantity;
     group.length += b.quantity * b.cutLength;
-    group.mass += steelMass(b.cutLength, b.diameter) * b.quantity;
+    group.mass += b.mass;
+    group.totalLength += b.totalLength;
+    group.totalMass += b.totalMass;
   }
   const concreteVolume = pieceVolume(p);
   return {
     mass,
-    totalMass: mass * p.quantity,
+    totalMass: bars.reduce((sum, b) => sum + b.totalMass, 0),
     steelSummary: steelSummary.sort(
       (a, b) => a.grade - b.grade || a.diameter - b.diameter,
     ),
@@ -267,7 +287,7 @@ export function buildRebarGeometry(
     s = p.detailing;
   const layout = tieLayout(p),
     connections = connectionGeometry(p, layout),
-    bars: Bar[] = [],
+    bars: ShapedBar[] = [],
     issues: DetailIssue[] = [];
   let order = 0;
   const instance = (
@@ -284,7 +304,10 @@ export function buildRebarGeometry(
   };
   geometryErrors(p).forEach((message, i) => issue(`geometry-${i}`, message));
   const add = (
-    b: Omit<Bar, "mark" | "exactLength" | "cutLength" | "role" | "quantity">,
+    b: Omit<
+      ShapedBar,
+      "mark" | "exactLength" | "cutLength" | "role" | "quantity"
+    >,
   ) => {
     const exactLength = b.path.length + b.hookExtra;
     if (!Number.isFinite(exactLength) || exactLength <= 0 || !b.path.valid) {
@@ -789,8 +812,16 @@ export function buildRebarGeometry(
   firstLayerPositions.sort((a, b) => a - b);
   const transverse = transverseGeometry(p, undefined, firstLayerPositions);
   transverse.problems.forEach(({ code, message }) => issue(code, message));
+  const placedStirrups = transverse.sections.filter(({ path }) => path.valid);
+  const outerPitch = pitchOf(
+    placedStirrups.filter(({ internal }) => !internal).map(({ x }) => x),
+  );
+  const innerPitch = pitchOf(
+    placedStirrups.filter(({ internal }) => internal).map(({ x }) => x),
+  );
   for (const section of transverse.sections) {
     const hookTail = Math.max(5 * r.stirrupDiameter, 50);
+    const spacing = section.internal ? innerPitch : outerPitch;
     add({
       family: section.internal ? "stirrupInner" : "stirrup",
       description: section.internal
@@ -804,8 +835,8 @@ export function buildRebarGeometry(
       height: section.height,
       hookExtra: 0,
       hookTail,
-      note: `${section.internal ? "Estribo interno fechado" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, justaposto com afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm` : ""}`,
-      spacing: pitch || null,
+      note: `${section.internal ? "Estribo interno fechado" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${spacing ? `; c/${(spacing / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, justaposto com afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm` : ""}`,
+      spacing,
       anchorage: [
         { end: "ganchos", type: "2 ganchos de 135°", length: hookTail },
       ],
@@ -1127,18 +1158,28 @@ export function buildRebarGeometry(
       "special-bars",
       "A armadura de fendilhamento ou suspensão informada no cálculo requer definição própria de forma e ancoragem; não foi incluída no quadro. Detalhe este reforço antes da execução.",
     );
-  for (const b of bars) {
+  const positions: Bar[] = bars.map((b) => {
     const group = bars.filter((v) => v.family === b.family);
-    b.mark =
+    const mark =
       familyMark[b.family] +
       (group.length > 1 ? `-${group.indexOf(b) + 1}` : "");
-  }
+    const totalQuantity = b.quantity * p.quantity;
+    const mass = steelMass(b.cutLength, b.diameter) * b.quantity;
+    return {
+      ...b,
+      mark,
+      totalQuantity,
+      totalLength: b.cutLength * totalQuantity,
+      mass,
+      totalMass: mass * p.quantity,
+    };
+  });
   return {
     piece: p,
-    bars,
+    bars: positions,
     issues,
     arrangement: beam ? "beam" : "consolo",
     tieRows,
-    ...rebarQuantities(p, bars),
+    ...rebarQuantities(p, positions),
   };
 }

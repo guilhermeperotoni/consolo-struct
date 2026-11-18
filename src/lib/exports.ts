@@ -1,5 +1,4 @@
 import { rebarModel } from "../detailing/rebarModel";
-import { steelMass } from "../detailing/geometry";
 import {
   calculate,
   classificationLabels,
@@ -218,6 +217,8 @@ export function toCsv(project: Project) {
     "N1 ramos detalhados por peca",
     "Aco detalhado total (kg)",
     "Taxa de aco detalhado (kg/m3)",
+    "Volume consolo por peca (m3)",
+    "Aco detalhado por peca (kg)",
   );
   for (const p of project.pieces) {
     const r = calculate(p);
@@ -260,12 +261,7 @@ export function toCsv(project: Project) {
       n4?.quantity ?? 0,
       n4?.diameter ?? p.rebar.constructiveDiameter ?? 8,
       n4 ? number(n4.cutLength / 10, 1) : "",
-      n4
-        ? number(
-            steelMass(n4.cutLength, n4.diameter) * n4.quantity * p.quantity,
-            3,
-          )
-        : "",
+      n4 ? number(n4.totalMass, 3) : "",
       ...(withGammaN
         ? [
             gammaNPolicyLabels[gammaNDecision(p.design).policy],
@@ -278,6 +274,8 @@ export function toCsv(project: Project) {
       rebar.tieRows.reduce((sum, row) => sum + row.detailedCount, 0),
       number(rebar.totalMass, 2),
       number(rebar.steelRate, 1),
+      number(rebar.concreteVolume, 3),
+      number(rebar.mass, 2),
     ]);
   }
   return "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n");
@@ -430,7 +428,7 @@ export async function toPdf(project: Project, p: Piece): Promise<Uint8Array> {
   const n4 = rebar.bars.find((b) => b.family === "constructive");
   const n4Count = n4?.quantity ?? 0;
   line(
-    `N4 construtiva: face inferior com dobra frontal e prolongamento no suporte; ${n4Count} barras phi ${n4?.diameter ?? p.rebar.constructiveDiameter ?? 8} mm; C unitario=${n4 ? number(n4.cutLength / 10, 1) : "--"} cm; massa total=${n4 ? number(steelMass(n4.cutLength, n4.diameter) * n4Count * p.quantity, 3) : "--"} kg. Consultar forma e pendencias no detalhamento.`,
+    `N4 construtiva: face inferior com dobra frontal e prolongamento no suporte; ${n4Count} barras phi ${n4?.diameter ?? p.rebar.constructiveDiameter ?? 8} mm; C unitario=${n4 ? number(n4.cutLength / 10, 1) : "--"} cm; massa total=${n4 ? number(n4.totalMass, 3) : "--"} kg. Consultar forma e pendencias no detalhamento.`,
   );
   rebar.issues
     .filter((issue) => issue.code.startsWith("constructive-fit-"))
