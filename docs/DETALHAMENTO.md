@@ -58,6 +58,8 @@ As formas de estribos verticais acompanham a face inferior inclinada com cobrime
 
 ## Quadro de aço
 
+O quadro e o CSV de detalhamento usam quantidade, comprimento e massa armazenados por posição. O CSV do projeto traz o volume de concreto e o aço detalhado por peça, além dos totais do tipo. No resumo geral de todos os consolos, a taxa de aço é a massa total dividida pelo volume total de concreto.
+
 Cada linha contém posição, aço, bitola, barras por peça, barras totais, C unitário, C total e massa total. O resumo agrupa por classe de aço e bitola. A quantidade do tipo multiplica os quantitativos uma única vez. O resumo geral soma todos os tipos; a identificação completa de uma posição é, por exemplo, **C01/N1**.
 
 A massa usa área circular e densidade de 7 850 kg/m³, com o comprimento de corte adotado. Não inclui perdas de oficina, reserva de compra, emendas adicionais ou barras do suporte não cadastradas. O CSV usa separador ponto e vírgula, decimal com vírgula e proteção contra fórmulas em campos editáveis.

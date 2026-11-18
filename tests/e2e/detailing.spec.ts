@@ -42,6 +42,8 @@ test("detalhe individual e de todos: DXF em cm, quadro CSV e PDF vetorial", asyn
   dxf = await readFile((await download.path())!, "utf8");
   expect(dxf).toContain("C01");
   expect(dxf).toContain("C02");
+  expect(dxf).toContain("Concreto total:");
+  expect(dxf).toContain("do projeto:");
   event = page.waitForEvent("download");
   await page.getByRole("button", { name: "Quadro CSV", exact: true }).click();
   download = await event;

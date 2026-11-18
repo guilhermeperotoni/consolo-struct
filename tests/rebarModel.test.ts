@@ -22,8 +22,8 @@ import {
 import { partPoints3 } from "../src/detailing/rebarPlacement";
 import { sectionBars } from "../src/detailing/projection";
 import { beamBarPositions } from "../src/detailing/beam";
-import { samplePath } from "../src/detailing/geometry";
-import { pieceDrawing } from "../src/detailing/drawing";
+import { samplePath, steelMass } from "../src/detailing/geometry";
+import { pieceDrawing, steelSummaryDrawing } from "../src/detailing/drawing";
 import {
   drawingDxf,
   drawingPdf,
@@ -107,6 +107,13 @@ describe("Fonte única das armaduras (#63)", () => {
         expect(bar.diameter).toBeGreaterThan(0);
         expect(bar.grade).toBeGreaterThan(0);
         expect(bar.quantity).toBeGreaterThan(0);
+        expect(bar.totalQuantity).toBe(bar.instances.length * p.quantity);
+        expect(bar.totalLength).toBe(bar.cutLength * bar.totalQuantity);
+        expect(bar.mass).toBeCloseTo(
+          steelMass(bar.cutLength, bar.diameter) * bar.instances.length,
+          9,
+        );
+        expect(bar.totalMass).toBeCloseTo(bar.mass * p.quantity, 9);
         expect(bar.path.valid).toBe(true);
         expect(bar.exactLength).toBeCloseTo(bar.path.length + bar.hookExtra, 9);
         expect(bar.cutLength).toBe(Math.ceil(bar.exactLength - 1e-7));
@@ -486,14 +493,65 @@ describe("Fonte única das armaduras (#63)", () => {
       expect(values[header.indexOf("Volume consolo total (m3)")]).toBe(
         number(pieceVolume(p) * 4, 3),
       );
+      expect(values[header.indexOf("Volume consolo por peca (m3)")]).toBe(
+        number(d.concreteVolume, 3),
+      );
+      expect(values[header.indexOf("Aco detalhado por peca (kg)")]).toBe(
+        number(d.mass, 2),
+      );
       expect(values[header.indexOf("Aco detalhado total (kg)")]).toBe(
         number(d.totalMass, 2),
       );
       expect(values[header.indexOf("Taxa de aco detalhado (kg/m3)")]).toBe(
         number(d.steelRate, 1),
       );
+      const [scheduleHeader, ...rows] = csvCells(steelCsv([d]));
+      for (const [i, bar] of d.bars.entries()) {
+        const value = (column: string) =>
+          rows[i][scheduleHeader.indexOf(column)];
+        expect(value("Barras totais")).toBe(String(bar.totalQuantity));
+        expect(value("C total (cm)")).toBe(
+          (bar.totalLength / 10).toFixed(1).replace(".", ","),
+        );
+        expect(value("kg total")).toBe(
+          bar.totalMass.toFixed(3).replace(".", ","),
+        );
+      }
     },
   );
+
+  it("calcula a taxa geral pela massa e pelo volume de todos os exemplares", () => {
+    const p = curto(),
+      q = recortado();
+    q.quantity = 17;
+    const details = [buildDetail(p), buildDetail(q)];
+    const volume =
+      details[0].totalConcreteVolume + details[1].totalConcreteVolume;
+    const mass = details[0].totalMass + details[1].totalMass;
+    const summary = steelSummaryDrawing(exampleProject(), details);
+    expect(drawingSvg(summary)).toContain(
+      `Concreto total: ${number(volume, 3)} m³ · Taxa de aço do projeto: ${number(mass / volume, 1)} kg/m³`,
+    );
+  });
+
+  it("informa passo uniforme somente quando as posições físicas de N3G o têm", () => {
+    const p = shortFixture();
+    p.rebar.stirrupBranches = 4;
+    p.rebar.stirrupCount = 3;
+    const bars = rebarModel(p).bars.filter(
+      (bar) => bar.family === "stirrupInner",
+    );
+    expect(bars.flatMap((bar) => bar.instances)).toHaveLength(3);
+    expect(bars.every((bar) => bar.spacing === null)).toBe(true);
+
+    p.rebar.stirrupCount = 2;
+    const pair = rebarModel(p).bars.filter(
+      (bar) => bar.family === "stirrupInner",
+    );
+    const xs = pair.flatMap((bar) => bar.locations.map((loc) => loc.x));
+    expect(xs).toHaveLength(2);
+    expect(pair.every((bar) => bar.spacing === xs[1] - xs[0])).toBe(true);
+  });
 
   it.each(cases)(
     "%s: não altera o cálculo estrutural nem as entradas",
