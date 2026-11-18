@@ -1,4 +1,4 @@
-import { constructiveGeometry } from "../detailing/transverse";
+import { rebarModel } from "../detailing/rebarModel";
 import { steelMass } from "../detailing/geometry";
 import {
   calculate,
@@ -216,8 +216,8 @@ export function toCsv(project: Project) {
     );
   for (const p of project.pieces) {
     const r = calculate(p);
-    const n4 = constructiveGeometry(p);
-    const n4Cut = Math.ceil(n4.path.length - 1e-7);
+    // N4 as placed in the single reinforcement source (same as the sheet).
+    const n4 = rebarModel(p).bars.find((b) => b.family === "constructive");
     rows.push([
       p.name,
       p.description,
@@ -251,11 +251,14 @@ export function toCsv(project: Project) {
         ),
         3,
       ),
-      n4.branches,
-      n4.diameter,
-      n4.path.valid ? number(n4Cut / 10, 1) : "",
-      n4.path.valid
-        ? number(steelMass(n4Cut, n4.diameter) * n4.branches * p.quantity, 3)
+      n4?.quantity ?? 0,
+      n4?.diameter ?? p.rebar.constructiveDiameter ?? 8,
+      n4 ? number(n4.cutLength / 10, 1) : "",
+      n4
+        ? number(
+            steelMass(n4.cutLength, n4.diameter) * n4.quantity * p.quantity,
+            3,
+          )
         : "",
       ...(withGammaN
         ? [
@@ -413,11 +416,19 @@ export async function toPdf(project: Project, p: Piece): Promise<Uint8Array> {
   line(
     `Acoes principais: V=${num(p.loads.vertical)} N; H=${num(p.loads.horizontal)} N; gammaf=${p.loads.gamma}. Os parametros completos constam do apendice.`,
   );
-  const n4 = constructiveGeometry(p);
+  // N4 and the quantities come from the single reinforcement source.
+  const rebar = rebarModel(p);
+  const n4 = rebar.bars.find((b) => b.family === "constructive");
+  const n4Count = n4?.quantity ?? 0;
   line(
-    `N4 construtiva: face inferior com dobra frontal e prolongamento no suporte; ${n4.branches} barras phi ${n4.diameter} mm; C unitario=${number(Math.ceil(n4.path.length - 1e-7) / 10, 1)} cm; massa total=${number(steelMass(Math.ceil(n4.path.length - 1e-7), n4.diameter) * n4.branches * p.quantity, 3)} kg. Consultar forma e pendencias no detalhamento.`,
+    `N4 construtiva: face inferior com dobra frontal e prolongamento no suporte; ${n4Count} barras phi ${n4?.diameter ?? p.rebar.constructiveDiameter ?? 8} mm; C unitario=${n4 ? number(n4.cutLength / 10, 1) : "--"} cm; massa total=${n4 ? number(steelMass(n4.cutLength, n4.diameter) * n4Count * p.quantity, 3) : "--"} kg. Consultar forma e pendencias no detalhamento.`,
   );
-  n4.problems.forEach((message) => line(message, 10, true));
+  rebar.issues
+    .filter((issue) => issue.code.startsWith("constructive-fit-"))
+    .forEach((issue) => line(issue.message, 10, true));
+  line(
+    `Consumo por peca: concreto ${number(rebar.concreteVolume, 3)} m3; aco detalhado ${number(rebar.mass, 2)} kg; taxa de aco ${number(rebar.steelRate, 1)} kg/m3. Total (${p.quantity} pecas): concreto ${number(rebar.totalConcreteVolume, 3)} m3; aco ${number(rebar.totalMass, 2)} kg.`,
+  );
   title("3. Envelope de verificacoes");
   line(
     `Combinacao determinante da area do tirante: ${result.governingCase || "--"}. Cada verificacao e envelopada separadamente; nao se misturam V e H de casos diferentes.`,

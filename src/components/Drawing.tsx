@@ -1,11 +1,5 @@
-import {
-  constructiveGeometry,
-  transverseGeometry,
-  translatePath,
-  projectedConstructiveSection,
-} from "../detailing/transverse";
 import { samplePath } from "../detailing/geometry";
-import { buildDetail, lowerStitchLayout } from "../detailing/model";
+import { projectElevation, rebarModel } from "../detailing/rebarModel";
 import { tieLayout } from "../domain/engine";
 import { reactionGeometry, stirrupLayout } from "../domain/theory";
 import { bottomDepth, concreteProfile } from "../domain/profile";
@@ -111,43 +105,55 @@ export default function Drawing({
 }: Props) {
   const uid = useId().replaceAll(":", "");
   const g = p.geometry;
-  const transverse = useMemo(() => transverseGeometry(p), [p]);
-  const sectionX = stirrupLayout(p).positions[0];
-  const rootSection = useMemo(
-    () => transverseGeometry(p, sectionX),
-    [p, sectionX],
-  );
-  const detail = useMemo(() => buildDetail(p), [p]);
+  const stations = stirrupLayout(p);
+  const sectionX = stations.positions[0];
+  // Single reinforcement source shared with the 3D view and the detailing
+  // sheet; memoized per piece, so pan/zoom never rebuild it.
+  const detail = useMemo(() => rebarModel(p), [p]);
   const transverseInvalid = detail.issues.some(
     (issue) =>
       issue.code.startsWith("transverse-") ||
       issue.code.startsWith("shape-stirrup"),
   );
-  const rootOuter = rootSection.sections.find((sec) => !sec.internal)!;
-  const constructive = useMemo(() => constructiveGeometry(p), [p]);
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
-  const lowerStitchLevels = lowerStitchLayout(p, layout).levels;
   const lowerStitchMissing =
-    p.design.lowerStitchCount > 0 && lowerStitchLevels.length === 0;
+    p.design.lowerStitchCount > 0 &&
+    !detail.bars.some((bar) => bar.family === "lower");
+  // Section A–A at the first stirrup: the juxtaposed N3/N3G pair is projected.
   const sectionRebar = useMemo(
-    () => sectionBars(p, detail, sectionX),
+    () =>
+      sectionBars(p, detail, sectionX, {
+        pairWindow: p.rebar.stirrupDiameter,
+      }),
     [p, detail, sectionX],
   );
+  const elevation = useMemo(() => projectElevation(detail), [detail]);
+  const elevationOf = (...families: string[]) =>
+    elevation.filter((item) => families.includes(item.bar.family));
   const elevationTies = useMemo(() => elevationTieBars(p, detail), [p, detail]);
-  const elevationStitches = useMemo(
-    () =>
-      detail.bars
-        .filter((b) => b.family === "stitch" || b.family === "lower")
-        .flatMap((bar) => bar.locations.map((loc) => ({ bar, loc }))),
-    [detail],
-  );
   const beam = detail.arrangement === "beam";
-  const positiveBars = detail.bars.filter((bar) => bar.family === "positive");
   const connections = useMemo(
     () => (rebar && !section ? elevationShapes(p) : []),
     [p, rebar, section],
   );
+  // Outer N3 cut by A–A: its physical corner radius and height bound the N2 symbols.
+  const outerStirrup = detail.bars.find(
+    (bar) =>
+      bar.mark ===
+      sectionRebar.stirrups.find((item) => item.family === "stirrup")?.mark,
+  );
+  const rootSection = {
+    radius: outerStirrup
+      ? (outerStirrup.mandrel + outerStirrup.diameter) / 2
+      : 0,
+    stirrupOffset: outerStirrup?.locations[0].z ?? stations.offset,
+  };
+  const rootOuter = {
+    height:
+      outerStirrup?.height ??
+      bottomDepth(concreteProfile(p), sectionX) - 2 * stations.offset,
+  };
   const sectionHeadroom = Math.max(
     0,
     ...sectionRebar.lines.flatMap((line) => [-line.a.y, -line.b.y]),
@@ -313,20 +319,23 @@ export default function Drawing({
                 níveis preservados.
               </text>
             )}
-            {rebar && rootSection.sections.some((sec) => sec.internal) && (
-              <text
-                x={400}
-                y={120}
-                textAnchor="middle"
-                className="dimension-text"
-              >
-                N3/N3G e N4: projeção do par · x ={" "}
-                {rootSection.sections
-                  .map((s) => number(s.x / 10, 2))
-                  .join(" / ")}{" "}
-                cm
-              </text>
-            )}
+            {rebar &&
+              sectionRebar.stirrups.some(
+                (item) => item.family === "stirrupInner",
+              ) && (
+                <text
+                  x={400}
+                  y={120}
+                  textAnchor="middle"
+                  className="dimension-text"
+                >
+                  N3/N3G e N4: projeção do par · x ={" "}
+                  {sectionRebar.stirrups
+                    .map((item) => number(item.x / 10, 2))
+                    .join(" / ")}{" "}
+                  cm
+                </text>
+              )}
             {rebar && (
               <>
                 <g
@@ -334,19 +343,15 @@ export default function Drawing({
                   fill="none"
                   strokeWidth={p.rebar.stirrupDiameter * s}
                 >
-                  {rootSection.sections.map((section, i) => (
+                  {sectionRebar.stirrups.map((item, i) => (
                     <path
                       key={i}
-                      data-n3-part={section.internal ? "grampo" : "externo"}
-                      data-longitudinal-position={section.x}
-                      d={samplePath(
-                        translatePath(
-                          section.path,
-                          section.offset,
-                          rootSection.stirrupOffset,
-                        ),
-                        24,
-                      )
+                      data-mark={item.mark}
+                      data-n3-part={
+                        item.family === "stirrupInner" ? "grampo" : "externo"
+                      }
+                      data-longitudinal-position={item.x}
+                      d={samplePath(item.path, 24)
                         .map(
                           (pt, j) =>
                             `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${sectionTop + pt.y * s}`,
@@ -356,19 +361,19 @@ export default function Drawing({
                   ))}
                 </g>
                 <g {...groupProps("N4")}>
-                  {projectedConstructiveSection(
-                    constructive,
-                    rootSection.sections,
-                  ).map(({ v, depth, x }, i) => (
-                    <circle
-                      key={i}
-                      data-longitudinal-position={x}
-                      cx={400 + (v - g.width / 2) * s}
-                      cy={sectionTop + depth * s}
-                      r={(constructive.diameter * s) / 2}
-                      strokeWidth="0.5"
-                    />
-                  ))}
+                  {sectionRebar.constructive.map(
+                    ({ v, depth, x, diameter, mark }, i) => (
+                      <circle
+                        key={i}
+                        data-mark={mark}
+                        data-longitudinal-position={x}
+                        cx={400 + (v - g.width / 2) * s}
+                        cy={sectionTop + depth * s}
+                        r={(diameter * s) / 2}
+                        strokeWidth="0.5"
+                      />
+                    ),
+                  )}
                 </g>
                 <g {...groupProps("N1")}>
                   {sectionRebar.ties.map(({ v, depth, diameter, mark }, i) => (
@@ -571,39 +576,52 @@ export default function Drawing({
             {rebar && (
               <>
                 <g {...groupProps("N2")} fill="none" strokeWidth="2">
-                  {elevationStitches.map(({ bar, loc }, i) => (
-                    <path
-                      key={i}
-                      data-mark={bar.mark}
-                      data-quantity={bar.quantity}
-                      d={`M${X(-p.detailing.stitchEmbedment)} ${Y(loc.z)}H${X(loc.x)}`}
-                    >
-                      <title>{`${bar.mark} · ${bar.quantity} barra(s)`}</title>
-                    </path>
-                  ))}
+                  {elevationOf("stitch", "lower").map(
+                    ({ bar, shape }, i) =>
+                      shape.kind === "path" && (
+                        <path
+                          key={i}
+                          data-mark={bar.mark}
+                          data-quantity={bar.quantity}
+                          d={polyline(samplePath(shape.path, 24))}
+                        >
+                          <title>{`${bar.mark} · ${bar.quantity} barra(s)`}</title>
+                        </path>
+                      ),
+                  )}
                 </g>
                 <g {...groupProps("N3")} fill="none" strokeWidth="2">
-                  {transverse.sections.map((section, i) => (
-                    <path
-                      key={i}
-                      data-n3-part={section.internal ? "grampo" : "externo"}
-                      data-longitudinal-position={section.x}
-                      d={`M${X(section.x)} ${Y(transverse.stirrupOffset)}V${Y(transverse.stirrupOffset + section.height)}`}
-                    />
-                  ))}
+                  {elevationOf("stirrup", "stirrupInner").map(
+                    ({ bar, part, shape }, i) =>
+                      shape.kind === "path" && (
+                        <path
+                          key={i}
+                          data-mark={bar.mark}
+                          data-n3-part={
+                            bar.family === "stirrupInner" ? "grampo" : "externo"
+                          }
+                          data-longitudinal-position={part.at}
+                          d={polyline(samplePath(shape.path, 24))}
+                        />
+                      ),
+                  )}
                 </g>
                 <g {...groupProps("N4")} fill="none" strokeWidth="2.5">
-                  {constructive.positions.map((v, i) => (
-                    <path
-                      key={i}
-                      data-transverse-position={v}
-                      d={polyline(samplePath(constructive.path, 24))}
-                    >
-                      <title>
-                        {`N4 construtiva · barra ${i + 1} de ${constructive.positions.length} · sem contribuição resistente`}
-                      </title>
-                    </path>
-                  ))}
+                  {elevationOf("constructive").map(
+                    ({ bar, part, shape }, i, all) =>
+                      shape.kind === "path" && (
+                        <path
+                          key={i}
+                          data-mark={bar.mark}
+                          data-transverse-position={part.at}
+                          d={polyline(samplePath(shape.path, 24))}
+                        >
+                          <title>
+                            {`N4 construtiva · barra ${i + 1} de ${all.length} · sem contribuição resistente`}
+                          </title>
+                        </path>
+                      ),
+                  )}
                 </g>
                 <g
                   {...groupProps("N1")}
@@ -631,14 +649,24 @@ export default function Drawing({
                     strokeLinejoin="round"
                   >
                     <title>Armadura positiva (armado como viga)</title>
-                    {positiveBars.map((bar) => (
-                      <path
-                        key={bar.mark}
-                        data-mark={bar.mark}
-                        data-quantity={bar.quantity}
-                        d={polyline(samplePath(bar.path, 24))}
-                      />
-                    ))}
+                    {elevationOf("positive")
+                      // Every P1 bar projects onto the same elevation path.
+                      .filter(
+                        (item, i, all) =>
+                          all.findIndex((other) => other.bar === item.bar) ===
+                          i,
+                      )
+                      .map(
+                        ({ bar, shape }) =>
+                          shape.kind === "path" && (
+                            <path
+                              key={bar.mark}
+                              data-mark={bar.mark}
+                              data-quantity={bar.quantity}
+                              d={polyline(samplePath(shape.path, 24))}
+                            />
+                          ),
+                      )}
                   </g>
                 )}
                 {connections.length > 0 && (

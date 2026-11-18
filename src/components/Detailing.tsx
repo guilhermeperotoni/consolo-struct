@@ -507,6 +507,14 @@ function Detailing({
                   {piece.quantity} peças:{" "}
                   {number(selectedDetail?.totalMass ?? 0, 2)} kg
                 </span>
+                <span data-testid="detail-concrete">
+                  Concreto: {number(selectedDetail?.concreteVolume ?? 0, 3)}{" "}
+                  m³/pç · total{" "}
+                  {number(selectedDetail?.totalConcreteVolume ?? 0, 3)} m³
+                </span>
+                <span data-testid="detail-steel-rate">
+                  Taxa de aço: {number(selectedDetail?.steelRate ?? 0, 1)} kg/m³
+                </span>
               </div>
               <p className="detail-tip">
                 As posições de fabricação (N1, N2…) são próprias de cada peça.

@@ -75,7 +75,16 @@ export default function ThreeViewport(props: Props) {
   const { piece, dimensions, forces, mode, focus, apiRef } = props;
   const model = useMemo(
     () => buildSceneModel(piece),
-    [piece.geometry, piece.loads, piece.rebar, piece.design],
+    // Reinforcement comes from the detailing source: materials (mandrels)
+    // and detailing data (pins, embedment, hooks) also move the bars.
+    [
+      piece.geometry,
+      piece.loads,
+      piece.rebar,
+      piece.design,
+      piece.materials,
+      piece.detailing,
+    ],
   );
   const live = useRef({ props, model });
   live.current = { props, model };
@@ -756,8 +765,8 @@ export default function ThreeViewport(props: Props) {
           Área de apoio {number(piece.design.bearingLength / 10, 1)} ×{" "}
           {number(piece.design.bearingWidth / 10, 1)} cm
         </span>
-        <span title="A profundidade do suporte é ilustrada com a largura b do consolo. N1/N2 são eixos esquemáticos; N3/N4 compartilham a geometria do detalhamento. Ancoragens e interferências exigem conferência.">
-          <Info size={12} /> Suporte e armaduras esquemáticos
+        <span title="A profundidade do suporte é ilustrada com a largura b do consolo. As armaduras (N1, N2/N2I, N3/N3G, N4, P1, TS e pinos) usam os mesmos eixos, dobras e ganchos do detalhamento. Ancoragens e interferências exigem conferência.">
+          <Info size={12} /> Suporte esquemático · armaduras do detalhamento
         </span>
         {forces && (
           <span>

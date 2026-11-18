@@ -213,7 +213,12 @@ describe("Armado como viga — tirante (negativa) e positiva", () => {
     const n1 = scene.steel.filter((s) => s.id === "N1");
     const positive = scene.steel.filter((s) => s.id === "P1");
     expect(n1).toHaveLength(r.tieCount);
-    expect(n1.every((s) => s.points.length === 4)).toBe(true);
+    // #63: the 3D axis is the detailed bar with its real bends (arcs sampled),
+    // not only the four vertices of the schematic polyline.
+    const tie = d.bars.find((b) => b.family === "tie")!;
+    expect(
+      n1.every((s) => s.points.length === samplePath(tie.path, 24).length),
+    ).toBe(true);
     expect(positive).toHaveLength(p.detailing.beamBottomCount);
     expect(scene.steel.filter((s) => s.id === "N4")).toHaveLength(
       p.rebar.stirrupBranches,
