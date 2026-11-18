@@ -60,6 +60,8 @@ Cada linha contém posição, aço, bitola, barras por peça, barras totais, C u
 
 A massa usa área circular e densidade de 7 850 kg/m³, com o comprimento de corte adotado. Não inclui perdas de oficina, reserva de compra, emendas adicionais ou barras do suporte não cadastradas. O CSV usa separador ponto e vírgula, decimal com vírgula e proteção contra fórmulas em campos editáveis.
 
+Abaixo do resumo, a prancha informa o volume de concreto por peça e do tipo (m³) e a taxa de aço (kg/m³ = massa de aço da peça / volume de concreto da peça). O volume é o mesmo `pieceVolume` da barra de status, da lista de peças e do CSV do projeto, inclusive com o recorte do concreto excedente. O painel lateral do Detalhamento, a memória em tela e o PDF da memória mostram os mesmos valores.
+
 ## Referências gráficas analisadas
 
 Os dois DWGs fornecidos foram convertidos e inspecionados localmente. Do exemplo de consolos foram incorporadas a combinação de vistas/cortes, as formas das barras soltas, a identificação por posição e os quadros de comprimento e massa. Do exemplo dos pilares foram incorporadas planta e cortes adicionais, indicação das camadas do tirante e dobras com identificação própria na segunda camada. O padrão novo é independente: não reaproveita seus valores como dimensionamento nem redistribui os DWGs de terceiros no pacote.
@@ -70,7 +72,7 @@ O módulo recalcula a peça atual e acrescenta verificações de fabricação. F
 
 Os pinos opcionais têm espaçamento entre eixos e deslocamento transversal configuráveis, com cotas no corte. Zero no espaçamento ativa distribuição simétrica dentro do apoio. São verificadas as interferências geométricas com tirante e estribos verticais. São desenhados e quantificados com embutimento e espera; sua resistência, ancoragem e ligação à peça apoiada não são dimensionadas por este módulo. A configuração com armaduras especiais de suspensão ou fendilhamento não possui ainda suas formas completas de fabricação: recebe pendência impeditiva e informa a ausência no quadro. O detalhamento do pilar e do aparelho de apoio completo, soldas qualificadas, ganchos semicirculares de barras lisas CA-25, dentes Gerber e consolos nas duas faces permanecem fora do gerador local.
 
-As vistas 2D/3D de modelagem continuam esquemáticas, com etiquetas de famílias; as posições de fabricação e os comprimentos desta versão estão na aba Detalhamento. O motor estrutural é o 0.3.0; esta entrega não amplia seu escopo para análise espacial ou global.
+As vistas 2D/3D de modelagem usam as mesmas barras físicas do detalhamento (ver “Fonte única das armaduras”); as posições de fabricação, os comprimentos e as cotas executivas estão na aba Detalhamento. A espessura gráfica das barras e as cotas das vistas de modelagem ainda não estão em escala real (issues #69 e #72). O motor estrutural é o 0.3.0; esta entrega não amplia seu escopo para análise espacial ou global.
 
 ## Reproduzir exemplos e testar
 
@@ -96,12 +98,18 @@ Se a primeira camada tiver menos de quatro ramos físicos de N1, inclusive quand
 
 Falta de espaço longitudinal entre pares, invasão do cobrimento, ausência das N1 centrais na 1ª camada ou colisão de N3/N3G com N1 ou entre pares geram erros impeditivos específicos (exibidos também na seção A–A da modelagem). Não se diminui a folga, o diâmetro ou o mandril, nem se move N1 ou N4 para esconder o problema. O arranjo continua sujeito à conferência executiva; a capacidade numérica de quatro ramos não aprova um detalhamento congestionado. Para o registro histórico da regra anterior, consulte [a revisão do PR #41](VALIDACAO-REVISAO-PR41.md).
 
+## Fonte única das armaduras
+
+Cada posição é instanciada uma única vez por `buildRebarGeometry` com suas barras físicas: N1 em alça (plano horizontal, com os dois ganchos de suporte nos planos verticais de cada ramo), N1 reta (um eixo por ramo, com gancho), N1/P1 do modo viga, N2/N2I (contorno fechado no plano horizontal do seu nível), N3/N3G (plano transversal da sua estação), N4 (plano vertical de cada vértice inferior de N3/N3G), TS (ao longo da largura) e pinos (verticais, um por centro). A elevação lateral, a planta, os cortes A–A e B–B, a vista 3D, a relação e o resumo do aço são projeções ou cortes dessas barras; o número de barras físicas de cada posição é igual à quantidade declarada no quadro.
+
+O Corte B–B, no eixo da carga, usa o mesmo corte exato do A–A: no modo viga, N1 aparece nas posições reais e P1 é desenhada; costuras que terminam antes do eixo não aparecem; pinos aparecem no seu próprio plano. A planta projeta as alças com seus arcos, as dobras verticais e os ganchos na sua extensão em planta, e os estribos, N4 e P1 tracejados. A vista 3D passa a incluir TS, pinos, os ganchos de suporte de N1, as alças e as dobras reais, e N2/N2I com a mesma penetração `stitchEmbedment` e o mesmo alcance frontal do detalhamento. N5/N6 continuam sem geometria (pendência impeditiva).
+
 ## Coerência das projeções 2D
 
-A elevação e a seção A–A da modelagem compartilham `detailing/projection.ts` com os desenhos de detalhamento. N1 é projetada a partir das barras efetivamente geradas: uma alça descartada por falta de espaço não reaparece nas vistas, e o gancho de suporte já registrado no desenvolvimento aparece com sua curva e ponta. Barras com projeções coincidentes se sobrepõem; as marcas e quantidades identificam a composição.
+A elevação e a seção A–A da modelagem compartilham `detailing/projection.ts` com os desenhos de detalhamento; esse módulo apenas agrupa as projeções de `detailing/rebarModel.ts`. N1 é projetada a partir das barras efetivamente geradas: uma alça descartada por falta de espaço não reaparece nas vistas, e o gancho de suporte já registrado no desenvolvimento aparece com sua curva e ponta. Barras com projeções coincidentes se sobrepõem; as marcas e quantidades identificam a composição.
 
 O corte de N1, N2/N2I e P1 usa as interseções dos segmentos e arcos com a primeira estação real de N3, inclusive quando há um único estribo. Assim, um corte na curva pode mudar a posição transversal de N1 ou a profundidade de N1/P1; uma barra que termina antes do plano deixa de aparecer. N2/N2I respeitam também o início da penetração no suporte. O corte de N2/N2I considera o contorno arredondado; as duas pontas de fechamento de `closedStirrup`, sobrepostas fora do plano na forma de fabricação, não são contadas como ramos adicionais.
 
 Na seção esquemática da modelagem, os círculos de N2/N2I conservam a folga gráfica para permanecer inteiros por dentro do contorno projetado de N3, sem mudar seus níveis nem o modelo físico. Os desenhos de fabricação usam os eixos físicos. Pinos e barras soldadas são representados por linhas quando estão no próprio plano de corte. A projeção identificada de N3G/N4 em planos adjacentes permanece conforme a seção anterior.
 
-A cota d’ conserva o centroide nominal do cálculo, inclusive quando há barras omitidas por erro de fabricação ou dobras atravessadas pelo corte. Entradas, resultados resistentes, quantitativos, comprimentos, massas, versão do arquivo, formatos de exportação e a vista 3D não são alterados por essa projeção. As saídas SVG/DXF/PDF de detalhamento recebem a mesma correção geométrica da tela.
+A cota d’ conserva o centroide nominal do cálculo, inclusive quando há barras omitidas por erro de fabricação ou dobras atravessadas pelo corte. Entradas, resultados resistentes, quantitativos, comprimentos, massas, versão do arquivo e formatos de exportação não são alterados por essa projeção. Uma posição rejeitada por forma inválida (por exemplo, N3 que não comporta o mandril) deixa de ser desenhada em todas as vistas, como já não constava do quadro. As saídas SVG/DXF/PDF de detalhamento recebem a mesma correção geométrica da tela.

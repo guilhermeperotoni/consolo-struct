@@ -41,3 +41,18 @@ O aplicativo 0.4.0 inclui `src/components/ThreeViewport.tsx`, carregado sob dema
 `src/visualization/model3d.ts` converte as entradas canônicas em contorno, cotas, cargas e eixos de armaduras. `scene3d.ts` gera os objetos Three.js e gerencia seu descarte. O renderer WebGL 2 usa geometria sólida; SVGRenderer é a alternativa local automática. Não existe backend ou recurso externo de renderização.
 
 A versão do aplicativo é 0.4.0. O motor mantém a identificação 0.3.0 e a política LC-ELU-2026.1, pois este recurso acrescenta representação gráfica e não altera os modelos resistentes. Veja `VISUALIZACAO-3D.md`.
+
+## Fonte única das armaduras
+
+Todas as vistas, cortes, quadros e quantitativos de aço/concreto leem a mesma definição de armaduras (issue #63). Nenhum renderizador reconstrói coordenadas de barras.
+
+| Módulo                            | Responsabilidade                                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/detailing/model.ts`          | `buildRebarGeometry`: instancia uma vez cada posição (N1, N2, N2I, N3, N3G, N4, P1, TS, PINO) e suas barras físicas    |
+| `src/detailing/rebarPlacement.ts` | Partes planas exatas (linhas e arcos) nos planos `xy`, `xz` ou `yz`; projeção ortográfica e interseção com o plano `x` |
+| `src/detailing/rebarModel.ts`     | `rebarModel` memorizado por conteúdo; `projectElevation`, `projectPlan`, `intersectSectionX`, `scenePaths`             |
+| `src/detailing/projection.ts`     | Agrupamentos por família para os renderizadores (ligações, N1 com gancho, seção com o par N3/N3G)                      |
+
+Cada posição contém marca, família, função estrutural, bitola, classe de aço, quantidade por peça (e total, multiplicada pela quantidade de peças), espaçamento quando uniforme, forma de fabricação com raios e ganchos, provisões de ancoragem de cada extremidade, comprimentos desenvolvido (`exactLength`) e de corte (`cutLength`), e as barras físicas (`instances`), uma por unidade da quantidade. Eixos do modelo em mm: `x` a partir da face do suporte, `y` a partir de uma face lateral e `z` como profundidade abaixo do topo. A massa, o resumo por classe/bitola, o volume de concreto (`pieceVolume`) e a taxa de aço (kg/m³) saem de `rebarQuantities`, a mesma função usada pelo detalhamento e pelas exportações.
+
+`buildRebarGeometry` não executa o motor ELU, exceto no modo “Armado como viga”, cujas dobras usam a ancoragem calculada. `buildDetail` executa o motor uma única vez, reutiliza seus valores na geometria e acrescenta as pendências do cálculo. Elevação, seção A–A e 3D da modelagem usam `rebarModel`, memorizado pelo conteúdo completo da peça: qualquer edição troca a chave, e pan/zoom não reconstroem nada. Projeções de uma parte paralela à vista preservam os arcos; partes perpendiculares colapsam para a sua extensão exata; cortes intersectam linhas e arcos analiticamente e incluem somente as barras que atravessam o plano. Na seção A–A, o par N3/N3G justaposto é projetado e cada N4 é cortada no plano do estribo que a contém.
