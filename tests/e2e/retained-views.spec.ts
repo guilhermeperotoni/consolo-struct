@@ -188,7 +188,12 @@ test("soltura usa coordenadas finais mesmo sem movimento intermediário; zoom pr
   // not millionths of a model unit. Missing the final delta fails by 80/55 px.
   expect(Math.abs((after.e - before.e) * scale - 95)).toBeLessThan(0.01);
   expect(Math.abs((after.f - before.f) * scale - 65)).toBeLessThan(0.01);
-  const anchor = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.4 };
+  // WheelEvent converts client coordinates to integers. Use the same point for
+  // both the event and the expected anchor instead of testing a fractional one.
+  const anchor = {
+    x: Math.round(box.x + box.width * 0.6),
+    y: Math.round(box.y + box.height * 0.4),
+  };
   const local = () =>
     page.getByTestId("detail-model").evaluate((el, anchor) => {
       const p = new DOMPoint(anchor.x, anchor.y).matrixTransform(
