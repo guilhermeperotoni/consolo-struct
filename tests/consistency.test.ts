@@ -180,6 +180,20 @@ describe("Paridade entre quantidade indicada e desenhada (#64)", () => {
     },
   );
 
+  it("alças coincidentes na largura mínima aparecem todas no corte", () => {
+    const p = shortFixture();
+    p.geometry.width = 100;
+    const d = buildDetail(p);
+    expect(d.issues.some((i) => i.code === "nested-loops")).toBe(true);
+    const x1 = stirrupLayout(p).positions[0];
+    expect(sectionBars(p, d, x1).ties).toHaveLength(p.rebar.tieCount);
+    expect(
+      section(p)
+        .match(/steel-N1[^]*?<\/g>/)![0]
+        .match(/<circle/g),
+    ).toHaveLength(p.rebar.tieCount);
+  });
+
   it("CA3: contagens inviáveis são acusadas, nunca escondidas", () => {
     const odd = shortFixture();
     odd.rebar.tieCount = 5;
