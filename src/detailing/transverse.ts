@@ -9,9 +9,8 @@ import {
   roundedPath,
   samplePath,
   type BarPath,
-  type Point,
-  type Segment,
 } from "./geometry";
+import { translatePath } from "./rebarPlacement";
 
 type Point3 = [number, number, number];
 /** Minimum distance of two centre-line segments, including crossings between samples. */
@@ -58,18 +57,7 @@ export function pathsClash(first: Point3[], second: Point3[], minimum: number) {
 
 /** One physical source for N3/N4, in mm. Cross sections use (width, depth);
  * longitudinal bars use (length from support, depth). No resistance from N4. */
-export function translatePath(path: BarPath, x: number, y: number): BarPath {
-  const move = (p: Point) => ({ x: p.x + x, y: p.y + y });
-  return {
-    ...path,
-    segments: path.segments.map(
-      (s): Segment =>
-        s.type === "line"
-          ? { ...s, a: move(s.a), b: move(s.b) }
-          : { ...s, center: move(s.center) },
-    ),
-  };
-}
+export { translatePath };
 
 /** All intersections with a section x, including arcs; no assumed straight chord. */
 export function sectionDepths(path: BarPath, x: number): number[] {

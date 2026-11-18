@@ -20,7 +20,6 @@ import {
   samplePath,
   pathSamplingError,
   type BarPath,
-  type Point,
 } from "./geometry";
 import { beamArrangementActive, beamLayout, beamBarPositions } from "./beam";
 import type { BarArrangement } from "./settings";
@@ -31,6 +30,13 @@ import {
   pathsClash,
 } from "./transverse";
 import { connectionGeometry, pinCenters } from "./connections";
+import {
+  partPoints3,
+  placed,
+  type BarInstance,
+  type PlacedPath,
+} from "./rebarPlacement";
+import { pieceVolume } from "../domain/profile";
 export { pinCenters } from "./connections";
 
 export type DetailIssue = {
@@ -38,22 +44,36 @@ export type DetailIssue = {
   severity: "error" | "review";
   message: string;
 };
+export type BarFamily =
+  | "tie"
+  | "stitch"
+  | "lower"
+  | "stirrup"
+  | "constructive"
+  | "stirrupInner"
+  | "pin"
+  | "welded"
+  | "positive";
+/** Anchorage provision of one end, as detailed (developed length along the
+ * bar axis from the stated origin). `length` is null when the end is anchored
+ * by a device (loop or welded bar) instead of a developed length. These are
+ * geometric provisions; normative verification is done by the engine. */
+export type BarAnchorage = {
+  end: "suporte" | "ponta" | "ganchos" | "embutimento" | "espera";
+  type: string;
+  length: number | null;
+};
 export type Bar = {
   mark: string;
-  family:
-    | "tie"
-    | "stitch"
-    | "lower"
-    | "stirrup"
-    | "constructive"
-    | "stirrupInner"
-    | "pin"
-    | "welded"
-    | "positive";
+  family: BarFamily;
+  /** Structural function of the position. */
+  role: string;
   description: string;
   diameter: number;
   grade: number;
+  /** Bars per piece; always equal to `instances.length`. */
   quantity: number;
+  /** Fabrication shape (centre line, mm). */
   path: BarPath;
   exactLength: number;
   cutLength: number;
@@ -63,25 +83,104 @@ export type Bar = {
   hookTail: number;
   hookExtra: number;
   note: string;
+  /** Axis spacing between consecutive bars of the position, when uniform. */
+  spacing: number | null;
+  anchorage: BarAnchorage[];
   locations: { x: number; z: number; layer?: number }[];
+  /** Physical bars of this position in the piece, one per unit of `quantity`. */
+  instances: BarInstance[];
 };
-export type Detail = {
+export type SteelSummaryRow = {
+  grade: number;
+  diameter: number;
+  count: number;
+  length: number;
+  mass: number;
+};
+/** Steel and concrete quantities of one piece, derived from the same bars. */
+export type RebarQuantities = {
+  mass: number;
+  totalMass: number;
+  steelSummary: SteelSummaryRow[];
+  /** Concrete volume per piece and for all pieces of the type, m³ (pieceVolume). */
+  concreteVolume: number;
+  totalConcreteVolume: number;
+  /** Steel per concrete volume, kg/m³. */
+  steelRate: number;
+};
+/** Pure geometry of every detailed bar, without the ELU report. */
+export type RebarGeometry = RebarQuantities & {
   piece: Piece;
   bars: Bar[];
   issues: DetailIssue[];
-  result: CalculationResult;
-  mass: number;
-  totalMass: number;
   arrangement: BarArrangement;
   tieRows: ReturnType<typeof tieLayout>["rows"];
-  steelSummary: {
-    grade: number;
-    diameter: number;
-    count: number;
-    length: number;
-    mass: number;
-  }[];
 };
+export type Detail = RebarGeometry & {
+  result: CalculationResult;
+};
+export const familyMark: Record<BarFamily, string> = {
+  tie: "N1",
+  stitch: "N2",
+  lower: "N2I",
+  stirrup: "N3",
+  stirrupInner: "N3G",
+  constructive: "N4",
+  positive: "P1",
+  welded: "TS",
+  pin: "PINO",
+};
+export const familyRole: Record<BarFamily, string> = {
+  tie: "Tirante: armadura principal resistente",
+  stitch: "Costura superior: armadura secundária nos 2d/3 superiores",
+  lower: "Costura inferior: armadura secundária no trecho restante",
+  stirrup: "Estribo vertical",
+  stirrupInner: "Estribo interno fechado (4 ramos)",
+  constructive: "Armadura construtiva, sem contribuição resistente",
+  positive: "Positiva do modo viga, não computada como resistente",
+  welded: "Ancoragem frontal do tirante por barra transversal soldada",
+  pin: "Ligação com a peça apoiada",
+};
+/** Uniform axis spacing of a sorted list of positions. */
+const pitchOf = (positions: number[]) =>
+  positions.length > 1 ? positions[1] - positions[0] : null;
+/** Mass, summary and concrete consumption from the bars of one piece. */
+export function rebarQuantities(p: Piece, bars: Bar[]): RebarQuantities {
+  const mass = bars.reduce(
+    (sum, b) => sum + steelMass(b.cutLength, b.diameter) * b.quantity,
+    0,
+  );
+  const steelSummary: SteelSummaryRow[] = [];
+  for (const b of bars) {
+    let group = steelSummary.find(
+      (v) => v.grade === b.grade && v.diameter === b.diameter,
+    );
+    if (!group) {
+      group = {
+        grade: b.grade,
+        diameter: b.diameter,
+        count: 0,
+        length: 0,
+        mass: 0,
+      };
+      steelSummary.push(group);
+    }
+    group.count += b.quantity;
+    group.length += b.quantity * b.cutLength;
+    group.mass += steelMass(b.cutLength, b.diameter) * b.quantity;
+  }
+  const concreteVolume = pieceVolume(p);
+  return {
+    mass,
+    totalMass: mass * p.quantity,
+    steelSummary: steelSummary.sort(
+      (a, b) => a.grade - b.grade || a.diameter - b.diameter,
+    ),
+    concreteVolume,
+    totalConcreteVolume: concreteVolume * p.quantity,
+    steelRate: concreteVolume > 0 ? mass / concreteVolume : 0,
+  };
+}
 const rounded = (n: number) => Math.round(n * 1000) / 1000;
 const cm = (mm: number) =>
   (mm / 10).toLocaleString("pt-BR", {
@@ -119,7 +218,45 @@ export function lowerStitchLayout(
       : [];
   return { start, end, step, levels };
 }
+/** Full detailing of one piece: the pure bar geometry plus the ELU report.
+ * The calculation runs once; beam bends reuse its anchorage values. */
 export function buildDetail(piece: Piece): Detail {
+  const result = calculate(piece);
+  const geometry = buildRebarGeometry(piece, result.values);
+  const issues = [...geometry.issues];
+  const issue = (
+    code: string,
+    message: string,
+    severity: DetailIssue["severity"],
+  ) => {
+    if (!issues.some((i) => i.code === code))
+      issues.push({ code, message, severity });
+  };
+  if (result.status !== "pass")
+    issue(
+      "calculation",
+      `O cálculo desta peça tem situação ${result.status === "fail" ? "não atende" : result.status === "review" ? "pendente de revisão" : result.status === "unsupported" ? "fora do escopo" : "inválida"}. Consulte a memória.`,
+      result.status === "fail" ||
+        result.status === "invalid" ||
+        result.status === "unsupported"
+        ? "error"
+        : "review",
+    );
+  issue(
+    "support-review",
+    "Conferir interferências com as barras do pilar, armadura local de ancoragem e ligação à peça apoiada no projeto de conjunto.",
+    "review",
+  );
+  return { ...geometry, issues, result };
+}
+
+/** Single physical source of every reinforcement position of a piece (mm).
+ * It runs the ELU engine only for the beam arrangement, whose bends depend on
+ * the calculated anchorage, and only when `values` are not supplied. */
+export function buildRebarGeometry(
+  piece: Piece,
+  values?: Record<string, number>,
+): RebarGeometry {
   const p = piece,
     g = p.geometry,
     r = p.rebar,
@@ -129,6 +266,11 @@ export function buildDetail(piece: Piece): Detail {
     connections = connectionGeometry(p, layout),
     bars: Bar[] = [],
     issues: DetailIssue[] = [];
+  let order = 0;
+  const instance = (
+    parts: PlacedPath[],
+    host?: BarInstance["host"],
+  ): BarInstance => ({ order: order++, parts, ...(host ? { host } : {}) });
   const issue = (
     code: string,
     message: string,
@@ -138,7 +280,7 @@ export function buildDetail(piece: Piece): Detail {
       issues.push({ code, message, severity });
   };
   geometryErrors(p).forEach((message, i) => issue(`geometry-${i}`, message));
-  const add = (b: Omit<Bar, "mark" | "exactLength" | "cutLength">) => {
+  const add = (b: Omit<Bar, "mark" | "exactLength" | "cutLength" | "role">) => {
     const exactLength = b.path.length + b.hookExtra;
     if (!Number.isFinite(exactLength) || exactLength <= 0 || !b.path.valid) {
       issue(
@@ -171,17 +313,30 @@ export function buildDetail(piece: Piece): Detail {
     if (existing) {
       existing.quantity += b.quantity;
       existing.locations.push(...b.locations);
+      existing.instances.push(...b.instances);
+      // Merged positions keep a spacing only when it is the same in both.
+      if (existing.spacing !== b.spacing) existing.spacing = null;
     } else
       bars.push({
         ...b,
         mark: "",
+        role: familyRole[b.family],
         exactLength,
         cutLength: Math.ceil(exactLength - 1e-7),
       });
   };
-  const result = calculate(p);
   const beam = beamArrangementActive(p);
-  const beamBars = beam ? beamLayout(p, result.values) : null;
+  const beamBars = beam ? beamLayout(p, values ?? calculate(p).values) : null;
+  /** Support hook of N1 in the vertical plane of one leg (as in Detail.hookExtra). */
+  const supportHook = (startX: number, depth: number, radius: number) =>
+    roundedPath(
+      [
+        { x: startX, y: depth },
+        { x: startX - radius, y: depth },
+        { x: startX - radius, y: depth + radius + s.supportHookTail },
+      ],
+      radius,
+    );
   if (s.barArrangement === "beam" && !beam)
     issue(
       "beam-unavailable",
@@ -233,6 +388,15 @@ export function buildDetail(piece: Piece): Detail {
         "O gancho do tirante não cabe no trecho de suporte representado; reveja projeção, ponta e altura.",
       );
   }
+  /** Developed N1 length beyond the support face, as detailed. */
+  const supportAnchorage = (): BarAnchorage =>
+    q.supportAnchor === "hook"
+      ? {
+          end: "suporte",
+          type: "gancho de 90°",
+          length: back - mainR + (Math.PI * mainR) / 2 + s.supportHookTail,
+        }
+      : { end: "suporte", type: "reta", length: back };
   if (!loopPinDefined(steel, r.tieDiameter))
     issue(
       "main-grade",
@@ -249,6 +413,7 @@ export function buildDetail(piece: Piece): Detail {
             "beam-top-anchor",
             `As dobras do tirante não alcançam a ancoragem necessária (lb,nec = ${cm(beamBars!.lbNecTop)} cm) dentro do contorno com o cobrimento informado. Reveja altura, bitola ou o comprimento do suporte.`,
           );
+        const positions = beamBarPositions(p, row.count, r.tieDiameter);
         add({
           family: "tie",
           description: "Tirante (negativa) dobrado",
@@ -262,11 +427,19 @@ export function buildDetail(piece: Piece): Detail {
           hookTail: 0,
           hookExtra: 0,
           note: `Camada ${layer + 1}; armado como viga: dobras de 90° no suporte (${cm(b.leg)} cm) e na ponta (${cm(f.leg)} cm)`,
+          spacing: pitchOf(positions),
+          anchorage: [
+            { end: "suporte", type: "dobra de 90°", length: b.developed },
+            { end: "ponta", type: "dobra de 90°", length: f.developed },
+          ],
           locations: Array.from({ length: row.count }, (_, i) => ({
             x: i,
             z: row.y,
             layer,
           })),
+          instances: positions.map((v) =>
+            instance([placed("xz", v, beamTop.path)]),
+          ),
         });
         return;
       }
@@ -326,6 +499,7 @@ export function buildDetail(piece: Piece): Detail {
             q.supportAnchor === "hook"
               ? 2 * ((Math.PI * mainR) / 2 + s.supportHookTail)
               : 0;
+          const inset = (g.width - width) / 2;
           add({
             family: "tie",
             description: "Tirante em alça",
@@ -339,7 +513,27 @@ export function buildDetail(piece: Piece): Detail {
             hookTail: q.supportAnchor === "hook" ? s.supportHookTail : 0,
             hookExtra,
             note: `Camada ${layer + 1}; 2 ramos por alça${q.supportAnchor === "hook" ? "; 2 ganchos de 90° fora do plano" : "; ancoragem reta no suporte"}`,
+            spacing: null,
+            anchorage: [
+              supportAnchorage(),
+              { end: "ponta", type: "alça horizontal", length: null },
+            ],
             locations: [{ x: i, z: row.y, layer }],
+            instances: [
+              instance([
+                placed("xy", row.y, translatePath(path, 0, inset)),
+                ...(q.supportAnchor === "hook"
+                  ? [inset, g.width - inset].map((v) =>
+                      placed(
+                        "xz",
+                        v,
+                        supportHook(startX, row.y, mainR),
+                        "hook",
+                      ),
+                    )
+                  : []),
+              ]),
+            ],
           });
         }
         if (
@@ -351,13 +545,15 @@ export function buildDetail(piece: Piece): Detail {
             "A curva frontal da alça invade a projeção da placa de apoio. Aumente a distância da placa à ponta.",
           );
       } else {
+        const startX = -back + (q.supportAnchor === "hook" ? mainR : 0);
         const path = roundedPath(
           [
-            { x: -back + (q.supportAnchor === "hook" ? mainR : 0), y: 0 },
+            { x: startX, y: 0 },
             { x: mainFront, y: 0 },
           ],
           0,
         );
+        const positions = beamBarPositions(p, row.count, r.tieDiameter);
         add({
           family: "tie",
           description: "Tirante reto",
@@ -374,11 +570,28 @@ export function buildDetail(piece: Piece): Detail {
               ? (Math.PI * mainR) / 2 + s.supportHookTail
               : 0,
           note: `Camada ${layer + 1}; ancoragem frontal soldada${q.supportAnchor === "hook" ? "; gancho de 90° no suporte" : ""}`,
+          spacing: pitchOf(positions),
+          anchorage: [
+            supportAnchorage(),
+            {
+              end: "ponta",
+              type: "barra transversal soldada",
+              length: null,
+            },
+          ],
           locations: Array.from({ length: row.count }, (_, i) => ({
             x: i,
             z: row.y,
             layer,
           })),
+          instances: positions.map((v) =>
+            instance([
+              placed("xz", v, translatePath(path, 0, row.y)),
+              ...(q.supportAnchor === "hook"
+                ? [placed("xz", v, supportHook(startX, row.y, mainR), "hook")]
+                : []),
+            ]),
+          ),
         });
         const welded = connections.welded.find((bar) => bar.layer === layer)!;
         add({
@@ -400,7 +613,24 @@ export function buildDetail(piece: Piece): Detail {
           hookExtra: 0,
           hookTail: 0,
           note: `Camada ${layer + 1}; solda conforme especificação do projeto`,
+          spacing: null,
+          anchorage: [],
           locations: [{ x: welded.x, z: welded.depth, layer: welded.layer }],
+          instances: [
+            instance([
+              placed(
+                "xy",
+                welded.depth,
+                roundedPath(
+                  [
+                    { x: welded.x, y: g.cover },
+                    { x: welded.x, y: g.cover + welded.length },
+                  ],
+                  0,
+                ),
+              ),
+            ]),
+          ],
         });
         issue(
           "weld-review",
@@ -469,6 +699,21 @@ export function buildDetail(piece: Piece): Detail {
           "stitch-back",
           "A penetração da costura no suporte é incompatível com a sua dimensão e cobrimento.",
         );
+      const path = closedStirrup(depth, width, r.stitchDiameter, mandrel);
+      // closedStirrup draws both 135° closing hooks for fabrication; they lap
+      // out of plane. The placed bar is the perimeter with the outer 90° part
+      // of the closing corner, so cuts do not count the tails as extra legs.
+      const closing = path.segments.at(-2)!;
+      const outline: BarPath = {
+        ...path,
+        segments: [
+          ...path.segments.slice(2, -2),
+          closing.type === "arc"
+            ? { ...closing, sweep: -Math.PI / 2 }
+            : closing,
+        ],
+      };
+      const hookTail = Math.max(5 * r.stitchDiameter, 50);
       add({
         family,
         description:
@@ -476,14 +721,32 @@ export function buildDetail(piece: Piece): Detail {
         diameter: r.stitchDiameter,
         grade: p.materials.fykTransverse,
         quantity: 1,
-        path: closedStirrup(depth, width, r.stitchDiameter, mandrel),
+        path,
         mandrel,
         width: depth,
         height: width,
         hookExtra: 0,
-        hookTail: Math.max(5 * r.stitchDiameter, 50),
+        hookTail,
         note: `Fechado; 2 ganchos de 135°; c/${(step / 10).toFixed(1)} cm`,
+        spacing: count > 1 ? step : null,
+        anchorage: [
+          {
+            end: "embutimento",
+            type: "penetração no suporte",
+            length: embedment,
+          },
+          { end: "ganchos", type: "2 ganchos de 135°", length: hookTail },
+        ],
         locations: [{ x: front, z }],
+        instances: [
+          instance([
+            placed(
+              "xy",
+              z,
+              translatePath(outline, -embedment, (g.width - width) / 2),
+            ),
+          ]),
+        ],
       });
     }
     if (
@@ -521,6 +784,7 @@ export function buildDetail(piece: Piece): Detail {
   const transverse = transverseGeometry(p);
   transverse.problems.forEach(({ code, message }) => issue(code, message));
   for (const section of transverse.sections) {
+    const hookTail = Math.max(5 * r.stirrupDiameter, 50);
     add({
       family: section.internal ? "stirrupInner" : "stirrup",
       description: section.internal
@@ -534,9 +798,26 @@ export function buildDetail(piece: Piece): Detail {
       width: section.width,
       height: section.height,
       hookExtra: 0,
-      hookTail: Math.max(5 * r.stirrupDiameter, 50),
+      hookTail,
       note: `${section.internal ? "Estribo interno fechado" : "Fechado externo"}; 2 ramos; 2 ganchos de 135°${pitch ? `; c/${(pitch / 10).toFixed(1)} cm` : ""}${section.internal ? `; pareado com N3, justaposto com afastamento longitudinal ${(transverse.innerShift / 10).toFixed(2)} cm` : ""}`,
+      spacing: pitch || null,
+      anchorage: [
+        { end: "ganchos", type: "2 ganchos de 135°", length: hookTail },
+      ],
       locations: [{ x: section.x, z: transverseOffset }],
+      instances: [
+        instance([
+          placed(
+            "yz",
+            section.x,
+            translatePath(
+              section.path,
+              section.offset,
+              transverse.stirrupOffset,
+            ),
+          ),
+        ]),
+      ],
     });
   }
   if (
@@ -568,6 +849,7 @@ export function buildDetail(piece: Piece): Detail {
         `As dobras da armadura positiva não alcançam a ancoragem de referência (lb,nec = ${cm(beamBars.lbNecBottom)} cm) sem interferir no tirante. Reveja a bitola da positiva ou a altura da peça.`,
         "review",
       );
+    const positions = beamBarPositions(p, bottom.count, bottom.diameter);
     add({
       family: "positive",
       description: "Armadura positiva dobrada",
@@ -581,10 +863,20 @@ export function buildDetail(piece: Piece): Detail {
       hookTail: 0,
       hookExtra: 0,
       note: `Armado como viga: dobras de 90° no suporte (${cm(bottom.back.leg)} cm) e na ponta (${cm(bottom.front.leg)} cm); não computada como armadura resistente`,
+      spacing: pitchOf(positions),
+      anchorage: [
+        {
+          end: "suporte",
+          type: "dobra de 90°",
+          length: bottom.back.developed,
+        },
+        { end: "ponta", type: "dobra", length: bottom.front.developed },
+      ],
       locations: [
         { x: 0, z: bottom.depthSupport },
         { x: bottom.vertices.at(-1)!.x, z: bottom.depthTip },
       ],
+      instances: positions.map((v) => instance([placed("xz", v, bottom.path)])),
     });
     issue(
       "beam-review",
@@ -619,15 +911,33 @@ export function buildDetail(piece: Piece): Detail {
     hookTail: constructive.tail,
     hookExtra: 0,
     note: `${constructive.positions.length} barras, uma por vértice inferior de N3; dobra frontal e prolongamento no suporte; sem contribuição resistente`,
+    spacing: null,
+    anchorage: [
+      {
+        end: "suporte",
+        type: "prolongamento no suporte",
+        length: -constructive.back,
+      },
+      { end: "ponta", type: "dobra frontal", length: constructive.tail },
+    ],
     locations: constructive.positions.map((v) => ({ x: v, z: 0 })),
+    // Each N4 sits in a lower corner of its own N3 (outer) or N3G (inner).
+    instances: constructive.positions.map((v, i, all) =>
+      instance(
+        [placed("xz", v, constructive.path)],
+        i > 0 && i < all.length - 1 ? "stirrupInner" : "stirrup",
+      ),
+    ),
   });
+  const point3 = (part: PlacedPath) =>
+    partPoints3(part, 24).map((pt): [number, number, number] => [
+      pt.x,
+      pt.y,
+      pt.z,
+    ]);
   // Segment distances catch crossings between vertices, not only coincident samples.
   const n4Paths = constructive.positions.map((v) =>
-    samplePath(constructive.path, 24).map((pt): [number, number, number] => [
-      pt.x,
-      v,
-      pt.y,
-    ]),
+    point3(placed("xz", v, constructive.path)),
   );
   const transversePaths = transverse.sections.map((section) => {
     // Closing hooks overlap out of plane in the fabrication projection (closedStirrup).
@@ -649,47 +959,13 @@ export function buildDetail(piece: Piece): Detail {
   for (const other of bars.filter(
     (b) => b.family === "tie" || b.family === "positive",
   )) {
-    const paths: { points: [number, number, number][]; tolerance: number }[] =
-      [];
-    const addPath = (
-      path: BarPath,
-      project: (pt: Point) => [number, number, number],
-    ) =>
-      paths.push({
-        points: samplePath(path, 24).map(project),
-        tolerance: pathSamplingError(path, 24),
-      });
-    if (beam) {
-      for (const v of beamBarPositions(p, other.quantity, other.diameter))
-        addPath(other.path, (pt) => [pt.x, v, pt.y]);
-    } else if (q.frontAnchor === "loop") {
-      const inset = (g.width - other.width) / 2;
-      for (const loc of other.locations)
-        addPath(other.path, (pt) => [pt.x, inset + pt.y, loc.z]);
-    } else {
-      for (const v of beamBarPositions(p, other.quantity, other.diameter))
-        addPath(other.path, (pt) => [pt.x, v, other.locations[0].z]);
-    }
-    if (!beam && q.supportAnchor === "hook" && other.family === "tie") {
-      const inset = q.frontAnchor === "loop" ? (g.width - other.width) / 2 : 0;
-      const transverse =
-        q.frontAnchor === "loop"
-          ? [inset, g.width - inset]
-          : beamBarPositions(p, other.quantity, other.diameter);
-      for (const loc of other.locations)
-        for (const v of transverse)
-          addPath(
-            roundedPath(
-              [
-                { x: -back + mainR, y: loc.z },
-                { x: -back, y: loc.z },
-                { x: -back, y: loc.z + mainR + s.supportHookTail },
-              ],
-              mainR,
-            ),
-            (pt) => [pt.x, v, pt.y],
-          );
-    }
+    // The very same placed bars (bodies and support hooks) shown in every view.
+    const paths = other.instances.flatMap((bar) =>
+      bar.parts.map((part) => ({
+        points: point3(part),
+        tolerance: pathSamplingError(part.path, 24),
+      })),
+    );
     const minimum = (other.diameter + constructive.diameter) / 2;
     if (
       n4Paths.some((n4) =>
@@ -725,6 +1001,7 @@ export function buildDetail(piece: Piece): Detail {
   }
   if (s.pins > 0) {
     const len = connections.pins?.length ?? 0;
+    const pins = connections.pins;
     add({
       family: "pin",
       description: "Pino de ligação",
@@ -744,7 +1021,37 @@ export function buildDetail(piece: Piece): Detail {
       hookExtra: 0,
       hookTail: 0,
       note: `Embutido ${(s.pinEmbedment / 10).toFixed(1)} cm; espera ${(s.pinProjection / 10).toFixed(1)} cm; verificar ligação`,
-      locations: [{ x: connections.pins?.x ?? g.loadOffset, z: 0 }],
+      spacing: pins ? pitchOf(pins.centers) : null,
+      anchorage: [
+        {
+          end: "embutimento",
+          type: "embutido no consolo",
+          length: s.pinEmbedment,
+        },
+        {
+          end: "espera",
+          type: "espera acima do topo",
+          length: s.pinProjection,
+        },
+      ],
+      locations: [{ x: pins?.x ?? g.loadOffset, z: 0 }],
+      instances: pins
+        ? pins.centers.map((v) =>
+            instance([
+              placed(
+                "xz",
+                v,
+                roundedPath(
+                  [
+                    { x: pins.x, y: pins.top },
+                    { x: pins.x, y: pins.bottom },
+                  ],
+                  0,
+                ),
+              ),
+            ]),
+          )
+        : [],
     });
     issue(
       "pins",
@@ -822,72 +1129,18 @@ export function buildDetail(piece: Piece): Detail {
       "special-bars",
       "A armadura de fendilhamento ou suspensão informada no cálculo requer definição própria de forma e ancoragem; não foi incluída no quadro. Detalhe este reforço antes da execução.",
     );
-  const familyMark: Record<Bar["family"], string> = {
-    tie: "N1",
-    stitch: "N2",
-    lower: "N2I",
-    stirrup: "N3",
-    stirrupInner: "N3G",
-    constructive: "N4",
-    positive: "P1",
-    welded: "TS",
-    pin: "PINO",
-  };
   for (const b of bars) {
     const group = bars.filter((v) => v.family === b.family);
     b.mark =
       familyMark[b.family] +
       (group.length > 1 ? `-${group.indexOf(b) + 1}` : "");
   }
-  if (result.status !== "pass")
-    issue(
-      "calculation",
-      `O cálculo desta peça tem situação ${result.status === "fail" ? "não atende" : result.status === "review" ? "pendente de revisão" : result.status === "unsupported" ? "fora do escopo" : "inválida"}. Consulte a memória.`,
-      result.status === "fail" ||
-        result.status === "invalid" ||
-        result.status === "unsupported"
-        ? "error"
-        : "review",
-    );
-  issue(
-    "support-review",
-    "Conferir interferências com as barras do pilar, armadura local de ancoragem e ligação à peça apoiada no projeto de conjunto.",
-    "review",
-  );
-  const mass = bars.reduce(
-    (sum, b) => sum + steelMass(b.cutLength, b.diameter) * b.quantity,
-    0,
-  );
-  const steelSummary: Detail["steelSummary"] = [];
-  for (const b of bars) {
-    let group = steelSummary.find(
-      (v) => v.grade === b.grade && v.diameter === b.diameter,
-    );
-    if (!group) {
-      group = {
-        grade: b.grade,
-        diameter: b.diameter,
-        count: 0,
-        length: 0,
-        mass: 0,
-      };
-      steelSummary.push(group);
-    }
-    group.count += b.quantity;
-    group.length += b.quantity * b.cutLength;
-    group.mass += steelMass(b.cutLength, b.diameter) * b.quantity;
-  }
   return {
     piece: p,
     bars,
     issues,
-    result,
-    mass,
-    totalMass: mass * p.quantity,
     arrangement: beam ? "beam" : "consolo",
     tieRows: layout.rows,
-    steelSummary: steelSummary.sort(
-      (a, b) => a.grade - b.grade || a.diameter - b.diameter,
-    ),
+    ...rebarQuantities(p, bars),
   };
 }
