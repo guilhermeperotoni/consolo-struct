@@ -117,9 +117,9 @@ export default function Drawing({
   );
   const reaction = reactionGeometry(p);
   const layout = tieLayout(p);
-  const lowerStitchMissing =
-    p.design.lowerStitchCount > 0 &&
-    !detail.bars.some((bar) => bar.family === "lower");
+  const lowerStitchMissing = detail.issues.some(
+    (issue) => issue.code === "zone-lower",
+  );
   // Section A–A at the first stirrup: the juxtaposed N3/N3G pair is projected.
   const sectionRebar = useMemo(
     () =>

@@ -436,19 +436,23 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     : H - (slope * cutDepth) / 10;
   // Both transverse cuts draw exactly the bars that meet their plane.
   const drawSection = (
-    cut: ReturnType<typeof sectionBars>,
+    section: ReturnType<typeof sectionBars>,
     ox: number,
     oy: number,
   ) => {
-    for (const bar of cut.stirrups) barPath(bar.path, ox, oy);
-    for (const bar of [...cut.constructive, ...cut.ties, ...cut.positives])
+    for (const bar of section.stirrups) barPath(bar.path, ox, oy);
+    for (const bar of [
+      ...section.constructive,
+      ...section.ties,
+      ...section.positives,
+    ])
       entities.push({
         type: "circle",
         center: { x: ox + bar.v / 10, y: oy + bar.depth / 10 },
         radius: bar.diameter / 20,
         layer: "ARMADURAS",
       });
-    for (const bar of cut.stitches)
+    for (const bar of section.stitches)
       for (const v of bar.positions)
         entities.push({
           type: "circle",
@@ -456,7 +460,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
           radius: bar.diameter / 20,
           layer: "ARMADURAS",
         });
-    for (const bar of cut.lines)
+    for (const bar of section.lines)
       line(
         ox + bar.a.x / 10,
         oy + bar.a.y / 10,

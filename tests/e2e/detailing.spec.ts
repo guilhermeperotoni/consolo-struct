@@ -170,3 +170,24 @@ test("alternância de escopo, troca de peça, pan com soltura e exportações SV
   const pdf = await readFile((await download.path())!);
   expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
 });
+
+test("volume de concreto e taxa de aço do detalhamento coincidem com a modelagem (#63)", async ({
+  page,
+}) => {
+  const canvas = page.locator(".detail-canvas");
+  await expect(canvas).toContainText("Taxa de aço");
+  const concrete = page.getByTestId("detail-concrete");
+  await expect(concrete).toContainText("m³/pç");
+  const detailVolume = (await concrete.textContent())!.match(
+    /Concreto: ([\d,]+)/,
+  )![1];
+  await expect(page.getByTestId("detail-steel-rate")).toContainText("kg/m³");
+  await expect(canvas).toContainText(`Concreto por peça: ${detailVolume} m³`);
+  await page
+    .locator(".document-tab-open")
+    .filter({ hasText: "Elevação" })
+    .click();
+  await expect(page.locator(".geometry-summary")).toContainText(
+    `Vol. ${detailVolume} m³`,
+  );
+});
