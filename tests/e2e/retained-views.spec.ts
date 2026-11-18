@@ -178,8 +178,10 @@ test("soltura usa coordenadas finais mesmo sem movimento intermediário; zoom pr
   await page.mouse.up();
   await frames(page);
   const after = await matrix(page);
-  expect(after.e - before.e).toBeCloseTo(95 / scale, 6);
-  expect(after.f - before.f).toBeCloseTo(65 / scale, 6);
+  // SVG matrices round their coefficients: assess the interaction in CSS pixels,
+  // not millionths of a model unit. Missing the final delta fails by 80/55 px.
+  expect(Math.abs((after.e - before.e) * scale - 95)).toBeLessThan(0.01);
+  expect(Math.abs((after.f - before.f) * scale - 65)).toBeLessThan(0.01);
   const anchor = { x: box.x + box.width * 0.6, y: box.y + box.height * 0.4 };
   const local = () =>
     page.getByTestId("detail-model").evaluate((el, anchor) => {
@@ -195,9 +197,14 @@ test("soltura usa coordenadas finais mesmo sem movimento intermediário; zoom pr
     deltaY: -100,
   });
   await frames(page);
-  const current = await local();
-  expect(current.x).toBeCloseTo(old.x, 5);
-  expect(current.y).toBeCloseTo(old.y, 5);
+  const current = await page.getByTestId("detail-model").evaluate((el, old) => {
+    const p = new DOMPoint(old.x, old.y).matrixTransform(
+      (el as unknown as SVGGElement).getScreenCTM()!,
+    );
+    return { x: p.x, y: p.y };
+  }, old);
+  expect(Math.abs(current.x - anchor.x)).toBeLessThan(0.01);
+  expect(Math.abs(current.y - anchor.y)).toBeLessThan(0.01);
 });
 
 for (const context of [
