@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { viewsFixture } from "../reference/views59";
 
 const open = (page: Page, name: string) =>
@@ -124,12 +124,18 @@ test("peça atual envia só uma peça; abas ocultas preservam estado e recebem a
   await page.getByLabel("Escopo dos detalhes").selectOption("all");
   await ready(page);
   expect((await requests()).at(-1)).toMatchObject({ scope: "all", pieces: 20 });
+  // Persist files even with the CI's list reporter (inline bodies live only in
+  // reporter events). The uploaded artifact must retain the successful evidence.
+  const payloadPath = info.outputPath("worker-payloads.json");
+  await writeFile(payloadPath, JSON.stringify(await requests(), null, 2));
   await info.attach("worker-payloads", {
-    body: JSON.stringify(await requests(), null, 2),
+    path: payloadPath,
     contentType: "application/json",
   });
+  const screenshotPath = info.outputPath("detalhamento-20-pecas.png");
+  await page.screenshot({ path: screenshotPath });
   await info.attach("detalhamento-20-pecas", {
-    body: await page.screenshot(),
+    path: screenshotPath,
     contentType: "image/png",
   });
 });
