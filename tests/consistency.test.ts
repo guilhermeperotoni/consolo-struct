@@ -79,9 +79,9 @@ describe("Paridade entre quantidade indicada e desenhada (#64)", () => {
     ).toBe(4);
     // Texts announce exactly what is drawn.
     const sheet = svg(p);
-    expect(sheet).toContain("Tirante: 4 ramos em 1 camada(s)");
-    expect(sheet).toContain("4 ramos Ø20,0 / 1 camada(s)");
-    expect(sheet).toContain("1ª: 4 ramos;");
+    expect(sheet).toContain("Tirante: 4 ramos detalhados em 1 camada(s) ·");
+    expect(sheet).toContain("Tirante detalhado: 4 ramos Ø20,0 / 1 camada(s)");
+    expect(sheet).toContain("1ª: 4 ramos detalhados;");
     expect(sheet).not.toContain("declarado(s)");
   });
 

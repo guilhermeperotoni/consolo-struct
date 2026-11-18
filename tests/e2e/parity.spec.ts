@@ -26,8 +26,12 @@ test("peça inicial: Seção A–A, prancha e relação do aço mostram os mesmo
     .click();
   const canvas = page.locator(".detail-canvas");
   await expect(canvas).toContainText("RELAÇÃO DO AÇO");
-  await expect(canvas).toContainText("Tirante: 4 ramos em 1 camada(s)");
-  await expect(canvas).toContainText("4 ramos Ø20,0 / 1 camada(s)");
+  await expect(canvas).toContainText(
+    "Tirante: 4 ramos detalhados em 1 camada(s) ·",
+  );
+  await expect(canvas).toContainText(
+    "Tirante detalhado: 4 ramos Ø20,0 / 1 camada(s)",
+  );
   await expect(canvas).not.toContainText("declarado(s)");
   // Two loops (N1-1, N1-2) of two legs each in the schedule, with the error.
   await expect(canvas).toContainText("N1-1");
