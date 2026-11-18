@@ -4,6 +4,8 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra e revisa o PR #58: elevação e seção A–A compartilham as barras efetivas do detalhamento, incluindo curvas de N1/P1, ganchos de suporte, penetração e alcance de N2/N2I e ligações no plano do corte. Alças descartadas não reaparecem nas vistas. Mantém a folga gráfica N2/N3, d’ do cálculo, quantitativos e esquema dos projetos; os desenhos de detalhamento e suas exportações recebem as mesmas correções.
+
 - Complementa a revisão do PR #57: detecta penetração real nas dobras de N3/N3G, propaga os erros de todas as estações à seção A–A, usa a posição real quando existe um único estribo e não desenha nem quantifica N3G/N4 internas sem as N1 centrais necessárias. Mantém entradas e resultados do cálculo resistente.
 
 - Corrige a geometria do estribo de 4 ramos (issue #49): N3G passa a ser um estribo interno fechado (`closedStirrup`) justaposto ao N3 (`Δx = φN3`) em ordem longitudinal monotônica, com largura definida pelas N1 centrais da 1ª camada e N4 internas nos cantos inferiores, verificação de colisão `N3/N3G × N1`, seção A–A da modelagem unificada na estação do 1º estribo com aviso de arranjo inválido e alinhamento das profundidades da costura inferior N2I entre modelagem, 3D e detalhamento (issue #50).

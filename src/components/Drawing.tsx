@@ -7,20 +7,15 @@ import {
 import { samplePath } from "../detailing/geometry";
 import { buildDetail, lowerStitchLayout } from "../detailing/model";
 import { tieLayout } from "../domain/engine";
-import {
-  reactionGeometry,
-  stirrupLayout,
-  upperStitchLayout,
-} from "../domain/theory";
-import { bottomDepth, bottomReach, concreteProfile } from "../domain/profile";
+import { reactionGeometry, stirrupLayout } from "../domain/theory";
+import { bottomDepth, concreteProfile } from "../domain/profile";
 import { useId, useMemo } from "react";
-import {
-  beamArrangementActive,
-  beamBarPositions,
-  beamLayout,
-} from "../detailing/beam";
 import { number, type Piece, type GeometryKey } from "../domain/model";
-import { elevationShapes } from "../detailing/projection";
+import {
+  elevationShapes,
+  elevationTieBars,
+  sectionBars,
+} from "../detailing/projection";
 type Props = {
   piece: Piece;
   section?: boolean;
@@ -122,11 +117,8 @@ export default function Drawing({
     () => transverseGeometry(p, sectionX),
     [p, sectionX],
   );
-  const sectionDetail = useMemo(
-    () => (rebar && section ? buildDetail(p) : null),
-    [p, rebar, section],
-  );
-  const transverseInvalid = sectionDetail?.issues.some(
+  const detail = useMemo(() => buildDetail(p), [p]);
+  const transverseInvalid = detail.issues.some(
     (issue) =>
       issue.code.startsWith("transverse-") ||
       issue.code.startsWith("shape-stirrup"),
@@ -138,21 +130,35 @@ export default function Drawing({
   const lowerStitchLevels = lowerStitchLayout(p, layout).levels;
   const lowerStitchMissing =
     p.design.lowerStitchCount > 0 && lowerStitchLevels.length === 0;
-  const stitchLevels = [
-    ...upperStitchLayout(p, layout).levels,
-    ...lowerStitchLevels,
-  ];
-  const beam = useMemo(
-    () => (beamArrangementActive(p) ? beamLayout(p) : null),
-    [p],
+  const sectionRebar = useMemo(
+    () => sectionBars(p, detail, sectionX),
+    [p, detail, sectionX],
   );
+  const elevationTies = useMemo(() => elevationTieBars(p, detail), [p, detail]);
+  const elevationStitches = useMemo(
+    () =>
+      detail.bars
+        .filter((b) => b.family === "stitch" || b.family === "lower")
+        .flatMap((bar) => bar.locations.map((loc) => ({ bar, loc }))),
+    [detail],
+  );
+  const beam = detail.arrangement === "beam";
+  const positiveBars = detail.bars.filter((bar) => bar.family === "positive");
   const connections = useMemo(
     () => (rebar && !section ? elevationShapes(p) : []),
     [p, rebar, section],
   );
+  const sectionHeadroom = Math.max(
+    0,
+    ...sectionRebar.lines.flatMap((line) => [-line.a.y, -line.b.y]),
+  );
+  const sectionBottom = Math.max(
+    g.height,
+    ...sectionRebar.lines.flatMap((line) => [line.a.y, line.b.y]),
+  );
   const s = Math.min(
     480 / (g.columnWidth + g.length),
-    340 / (g.height + 80),
+    340 / (section ? sectionHeadroom + sectionBottom + 80 : g.height + 80),
     // Keep the section and its external dimensions inside the drawing.
     // Elevation keeps its existing scale; narrow sections are unchanged.
     section ? 480 / g.width : Infinity,
@@ -178,15 +184,16 @@ export default function Drawing({
       );
     return rootSection.stirrupOffset * s + Math.max(clearance, cornerInset);
   };
-  const stitchProjectionFits = stitchLevels.every(
-    (depth) =>
+  const stitchProjectionFits = sectionRebar.stitches.every(
+    ({ depth }) =>
       Math.min(
         depth - rootSection.stirrupOffset,
         rootSection.stirrupOffset + rootOuter.height - depth,
       ) >=
       (p.rebar.stirrupDiameter + p.rebar.stitchDiameter) / 2,
   );
-  const sectionCentroid = 140 + layout.dPrime * s;
+  const sectionTop = 140 + sectionHeadroom * s;
+  const sectionCentroid = sectionTop + layout.dPrime * s;
   const dPrimeLabel = `d’ = ${number(layout.dPrime / 10, 1)} cm`;
   const ox = (800 - (g.columnWidth + g.length) * s) / 2 + g.columnWidth * s,
     oy = 185;
@@ -268,7 +275,7 @@ export default function Drawing({
           <>
             <rect
               x={400 - (g.width * s) / 2}
-              y={140}
+              y={sectionTop}
               width={g.width * s}
               height={sectionHeight * s}
               fill="var(--concrete)"
@@ -277,7 +284,7 @@ export default function Drawing({
             />
             <rect
               x={400 - (g.width * s) / 2}
-              y={140}
+              y={sectionTop}
               width={g.width * s}
               height={sectionHeight * s}
               fill={`url(#${uid}concrete)`}
@@ -342,7 +349,7 @@ export default function Drawing({
                       )
                         .map(
                           (pt, j) =>
-                            `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${140 + pt.y * s}`,
+                            `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${sectionTop + pt.y * s}`,
                         )
                         .join("")}
                     />
@@ -357,73 +364,77 @@ export default function Drawing({
                       key={i}
                       data-longitudinal-position={x}
                       cx={400 + (v - g.width / 2) * s}
-                      cy={140 + depth * s}
+                      cy={sectionTop + depth * s}
                       r={(constructive.diameter * s) / 2}
                       strokeWidth="0.5"
                     />
                   ))}
                 </g>
                 <g {...groupProps("N1")}>
-                  {layout.rows.flatMap((row, j) =>
-                    Array.from({ length: row.count }, (_, i) => {
-                      const start =
-                        -g.width / 2 +
-                        g.cover +
-                        p.rebar.stirrupDiameter +
-                        p.rebar.tieDiameter / 2;
-                      const span = -2 * start;
-                      return (
-                        <circle
-                          key={`${j}-${i}`}
-                          cx={
-                            400 +
-                            (row.count === 1
-                              ? 0
-                              : start + (span * i) / (row.count - 1)) *
-                              s
-                          }
-                          cy={140 + row.y * s}
-                          r={Math.max(3, (p.rebar.tieDiameter * s) / 2)}
-                          strokeWidth="1"
-                        />
-                      );
-                    }),
-                  )}
+                  {sectionRebar.ties.map(({ v, depth, diameter, mark }, i) => (
+                    <circle
+                      key={i}
+                      data-mark={mark}
+                      cx={400 + (v - g.width / 2) * s}
+                      cy={sectionTop + depth * s}
+                      r={Math.max(3, (diameter * s) / 2)}
+                      strokeWidth="1"
+                    />
+                  ))}
                 </g>
                 {beam && (
                   <g
                     className="steel-positive"
                     data-testid="beam-positive-section"
                   >
-                    {beamBarPositions(
-                      p,
-                      beam.bottom.count,
-                      beam.bottom.diameter,
-                    ).map((v, i) => (
+                    {sectionRebar.positives.map(({ v, depth, diameter }, i) => (
                       <circle
                         key={i}
                         cx={400 + (v - g.width / 2) * s}
-                        cy={140 + beam.bottom.depthSupport * s}
-                        r={Math.max(3, (beam.bottom.diameter * s) / 2)}
+                        cy={sectionTop + depth * s}
+                        r={Math.max(3, (diameter * s) / 2)}
                         strokeWidth="1"
                       />
                     ))}
                   </g>
                 )}
                 <g {...groupProps("N2")} strokeWidth={s}>
-                  {stitchLevels.map((y, t) => (
-                    <g key={t}>
-                      <circle
-                        cx={sectionLeft + stitchInset(y)}
-                        cy={140 + y * s}
-                        r={stitchRadius}
-                      />
-                      <circle
-                        cx={sectionLeft + g.width * s - stitchInset(y)}
-                        cy={140 + y * s}
-                        r={stitchRadius}
-                      />
-                    </g>
+                  {sectionRebar.stitches.map(
+                    ({ depth, positions, mark }, t) => (
+                      <g key={t} data-mark={mark}>
+                        {positions.map((v, i) => {
+                          const inset = Math.max(
+                            Math.min(v, g.width - v) * s,
+                            stitchInset(depth),
+                          );
+                          return (
+                            <circle
+                              key={i}
+                              cx={
+                                sectionLeft +
+                                (v <= g.width / 2 ? inset : g.width * s - inset)
+                              }
+                              cy={sectionTop + depth * s}
+                              r={stitchRadius}
+                            />
+                          );
+                        })}
+                      </g>
+                    ),
+                  )}
+                </g>
+                <g className="steel-detail-families">
+                  {sectionRebar.lines.map((line, i) => (
+                    <path
+                      key={i}
+                      data-family={line.family}
+                      data-mark={line.mark}
+                      d={`M${sectionLeft + line.a.x * s} ${sectionTop + line.a.y * s}L${sectionLeft + line.b.x * s} ${sectionTop + line.b.y * s}`}
+                      fill="none"
+                      strokeWidth={line.diameter * s}
+                    >
+                      <title>{`${line.mark} · no plano de corte A–A`}</title>
+                    </path>
                   ))}
                 </g>
               </>
@@ -436,24 +447,26 @@ export default function Drawing({
                   aria-label={`${dPrimeLabel} · topo ao centroide do tirante`}
                 >
                   <title>
-                    Distância do topo ao centroide de todas as barras do tirante
+                    Distância do topo ao centroide nominal do tirante usado no
+                    cálculo; o corte pode atravessar dobras ou omitir alças
+                    inválidas
                   </title>
                   <path
-                    d={`M${sectionLeft - 40} 140V${sectionCentroid}`}
+                    d={`M${sectionLeft - 40} ${sectionTop}V${sectionCentroid}`}
                     fill="none"
                   />
                   <path
-                    d={`M${sectionLeft - 44} 144l8 -8 M${sectionLeft - 44} ${sectionCentroid + 4}l8 -8`}
+                    d={`M${sectionLeft - 44} ${sectionTop + 4}l8 -8 M${sectionLeft - 44} ${sectionCentroid + 4}l8 -8`}
                     fill="none"
                   />
                   <g className="dimension-extension" fill="none">
                     <path
-                      d={`M${sectionLeft} 140H${sectionLeft - 48} M${sectionLeft} ${sectionCentroid}H${sectionLeft - 48}`}
+                      d={`M${sectionLeft} ${sectionTop}H${sectionLeft - 48} M${sectionLeft} ${sectionCentroid}H${sectionLeft - 48}`}
                     />
                   </g>
                   <text
                     x={sectionLeft - 54}
-                    y={(140 + sectionCentroid) / 2}
+                    y={(sectionTop + sectionCentroid) / 2}
                     textAnchor="end"
                     dominantBaseline="middle"
                   >
@@ -476,23 +489,23 @@ export default function Drawing({
                 >
                   <title>Altura do concreto na estação do 1º estribo</title>
                   <path
-                    d={`M${440 + (g.width * s) / 2} 140V${140 + sectionHeight * s}`}
+                    d={`M${440 + (g.width * s) / 2} ${sectionTop}V${sectionTop + sectionHeight * s}`}
                     fill="none"
                   />
                   <path
-                    d={`M${436 + (g.width * s) / 2} 144l8 -8 M${436 + (g.width * s) / 2} ${140 + sectionHeight * s + 4}l8 -8`}
+                    d={`M${436 + (g.width * s) / 2} ${sectionTop + 4}l8 -8 M${436 + (g.width * s) / 2} ${sectionTop + sectionHeight * s + 4}l8 -8`}
                     fill="none"
                   />
                   <g className="dimension-extension" fill="none">
                     <path
-                      d={`M${400 + (g.width * s) / 2} 140H${448 + (g.width * s) / 2} M${400 + (g.width * s) / 2} ${140 + sectionHeight * s}H${448 + (g.width * s) / 2}`}
+                      d={`M${400 + (g.width * s) / 2} ${sectionTop}H${448 + (g.width * s) / 2} M${400 + (g.width * s) / 2} ${sectionTop + sectionHeight * s}H${448 + (g.width * s) / 2}`}
                     />
                   </g>
                   <text
                     x={444 + (g.width * s) / 2}
-                    y={(280 + sectionHeight * s) / 2}
+                    y={(2 * sectionTop + sectionHeight * s) / 2}
                     textAnchor="middle"
-                    transform={`rotate(-90 ${444 + (g.width * s) / 2} ${(280 + sectionHeight * s) / 2})`}
+                    transform={`rotate(-90 ${444 + (g.width * s) / 2} ${(2 * sectionTop + sectionHeight * s) / 2})`}
                   >
                     {`h = ${number(sectionHeight / 10, 1)}`}
                   </text>
@@ -502,7 +515,7 @@ export default function Drawing({
             {rebar && lowerStitchMissing && (
               <text
                 x={400}
-                y={155 + g.height * s}
+                y={sectionTop + 15 + sectionBottom * s}
                 textAnchor="middle"
                 className="dimension-text"
                 fill="var(--danger)"
@@ -513,7 +526,16 @@ export default function Drawing({
             <text
               className="drawing-caption"
               x="400"
-              y={Math.min(555, 170 + sectionHeight * s)}
+              y={Math.min(
+                555,
+                sectionTop +
+                  30 +
+                  Math.max(
+                    sectionHeight,
+                    ...sectionRebar.lines.map((line) => line.b.y),
+                  ) *
+                    s,
+              )}
               textAnchor="middle"
             >
               {`SEÇÃO A–A · 1º ESTRIBO · x = ${number(sectionX / 10, 2)} cm`}
@@ -549,27 +571,16 @@ export default function Drawing({
             {rebar && (
               <>
                 <g {...groupProps("N2")} fill="none" strokeWidth="2">
-                  {stitchLevels.map((y, i) => {
-                    const end = cut
-                      ? bottomReach(
-                          concrete,
-                          y,
-                          g.cover + p.rebar.stitchDiameter / 2,
-                          g.length,
-                        )
-                      : g.height === g.tipHeight
-                        ? g.length
-                        : y <= g.tipHeight
-                          ? g.length
-                          : (g.length * (g.height - y)) /
-                            (g.height - g.tipHeight);
-                    return (
-                      <path
-                        key={i}
-                        d={`M${X(-g.columnWidth + g.cover)} ${Y(y)}H${X(Math.max(0, end - g.cover))}`}
-                      />
-                    );
-                  })}
+                  {elevationStitches.map(({ bar, loc }, i) => (
+                    <path
+                      key={i}
+                      data-mark={bar.mark}
+                      data-quantity={bar.quantity}
+                      d={`M${X(-p.detailing.stitchEmbedment)} ${Y(loc.z)}H${X(loc.x)}`}
+                    >
+                      <title>{`${bar.mark} · ${bar.quantity} barra(s)`}</title>
+                    </path>
+                  ))}
                 </g>
                 <g {...groupProps("N3")} fill="none" strokeWidth="2">
                   {transverse.sections.map((section, i) => (
@@ -600,30 +611,35 @@ export default function Drawing({
                   strokeWidth="4"
                   strokeLinejoin="round"
                 >
-                  {beam
-                    ? beam.top.map((bar, i) => (
-                        <path key={i} d={polyline(bar.vertices)} />
-                      ))
-                    : layout.rows
-                        .filter((row) => row.count > 0)
-                        .map((row, i) => (
-                          <path
-                            key={i}
-                            d={`M${X(-Math.min(p.design.supportAnchorLength, g.columnWidth - g.cover))} ${Y(row.y)}H${X(g.length - g.cover)}`}
-                          />
-                        ))}
+                  {elevationTies.map(({ bar, path }, i) => (
+                    <path
+                      key={i}
+                      d={polyline(samplePath(path, 24))}
+                      data-mark={bar.mark}
+                      data-quantity={bar.quantity}
+                    >
+                      <title>{`${bar.mark} · ${bar.quantity} barra(s)`}</title>
+                    </path>
+                  ))}
                 </g>
                 {beam && (
-                  <path
+                  <g
                     className="steel-positive"
                     data-testid="beam-positive"
-                    d={polyline(beam.bottom.vertices)}
                     fill="none"
                     strokeWidth="3"
                     strokeLinejoin="round"
                   >
                     <title>Armadura positiva (armado como viga)</title>
-                  </path>
+                    {positiveBars.map((bar) => (
+                      <path
+                        key={bar.mark}
+                        data-mark={bar.mark}
+                        data-quantity={bar.quantity}
+                        d={polyline(samplePath(bar.path, 24))}
+                      />
+                    ))}
+                  </g>
                 )}
                 {connections.length > 0 && (
                   <g
