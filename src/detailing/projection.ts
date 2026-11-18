@@ -103,7 +103,7 @@ export function elevationTieBars(_p: Piece, detail: RebarSource) {
       result.push({
         bar,
         path: join([
-          body.shape.path,
+          reversed(body.shape.path),
           ...(hook?.shape.kind === "path" ? [hook.shape.path] : []),
         ]),
       });
@@ -246,4 +246,18 @@ export function sectionBars(
     }
   }
   return { ties, stitches, positives, lines, stirrups, constructive };
+}
+
+/** Runs the projected tie from the tip back to the support, where its hook starts. */
+function reversed(path: BarPath): BarPath {
+  return {
+    ...path,
+    segments: [...path.segments]
+      .reverse()
+      .map((s) =>
+        s.type === "line"
+          ? { ...s, a: s.b, b: s.a }
+          : { ...s, start: s.start + s.sweep, sweep: -s.sweep },
+      ),
+  };
 }

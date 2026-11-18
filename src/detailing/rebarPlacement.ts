@@ -170,7 +170,7 @@ export function projectPart(
   const [min, max] = pathExtent(path, "x");
   return max - min < EPS
     ? { kind: "point", center: { x: min, y: at } }
-    : { kind: "path", path: line({ x: max, y: at }, { x: min, y: at }) };
+    : { kind: "path", path: line({ x: min, y: at }, { x: max, y: at }) };
 }
 
 /** Intersection with the transverse plane x = `x`, in section coordinates. */
