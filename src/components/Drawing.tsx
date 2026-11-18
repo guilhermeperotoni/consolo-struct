@@ -148,9 +148,17 @@ export default function Drawing({
     () => (rebar && !section ? elevationShapes(p) : []),
     [p, rebar, section],
   );
+  const sectionHeadroom = Math.max(
+    0,
+    ...sectionRebar.lines.flatMap((line) => [-line.a.y, -line.b.y]),
+  );
+  const sectionBottom = Math.max(
+    g.height,
+    ...sectionRebar.lines.flatMap((line) => [line.a.y, line.b.y]),
+  );
   const s = Math.min(
     480 / (g.columnWidth + g.length),
-    340 / (g.height + 80),
+    340 / (section ? sectionHeadroom + sectionBottom + 80 : g.height + 80),
     // Keep the section and its external dimensions inside the drawing.
     // Elevation keeps its existing scale; narrow sections are unchanged.
     section ? 480 / g.width : Infinity,
@@ -184,7 +192,8 @@ export default function Drawing({
       ) >=
       (p.rebar.stirrupDiameter + p.rebar.stitchDiameter) / 2,
   );
-  const sectionCentroid = 140 + layout.dPrime * s;
+  const sectionTop = 140 + sectionHeadroom * s;
+  const sectionCentroid = sectionTop + layout.dPrime * s;
   const dPrimeLabel = `d’ = ${number(layout.dPrime / 10, 1)} cm`;
   const ox = (800 - (g.columnWidth + g.length) * s) / 2 + g.columnWidth * s,
     oy = 185;
@@ -266,7 +275,7 @@ export default function Drawing({
           <>
             <rect
               x={400 - (g.width * s) / 2}
-              y={140}
+              y={sectionTop}
               width={g.width * s}
               height={sectionHeight * s}
               fill="var(--concrete)"
@@ -275,7 +284,7 @@ export default function Drawing({
             />
             <rect
               x={400 - (g.width * s) / 2}
-              y={140}
+              y={sectionTop}
               width={g.width * s}
               height={sectionHeight * s}
               fill={`url(#${uid}concrete)`}
@@ -340,7 +349,7 @@ export default function Drawing({
                       )
                         .map(
                           (pt, j) =>
-                            `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${140 + pt.y * s}`,
+                            `${j ? "L" : "M"}${400 + (pt.x - g.width / 2) * s} ${sectionTop + pt.y * s}`,
                         )
                         .join("")}
                     />
@@ -355,7 +364,7 @@ export default function Drawing({
                       key={i}
                       data-longitudinal-position={x}
                       cx={400 + (v - g.width / 2) * s}
-                      cy={140 + depth * s}
+                      cy={sectionTop + depth * s}
                       r={(constructive.diameter * s) / 2}
                       strokeWidth="0.5"
                     />
@@ -367,7 +376,7 @@ export default function Drawing({
                       key={i}
                       data-mark={mark}
                       cx={400 + (v - g.width / 2) * s}
-                      cy={140 + depth * s}
+                      cy={sectionTop + depth * s}
                       r={Math.max(3, (diameter * s) / 2)}
                       strokeWidth="1"
                     />
@@ -382,7 +391,7 @@ export default function Drawing({
                       <circle
                         key={i}
                         cx={400 + (v - g.width / 2) * s}
-                        cy={140 + depth * s}
+                        cy={sectionTop + depth * s}
                         r={Math.max(3, (diameter * s) / 2)}
                         strokeWidth="1"
                       />
@@ -405,7 +414,7 @@ export default function Drawing({
                                 sectionLeft +
                                 (v <= g.width / 2 ? inset : g.width * s - inset)
                               }
-                              cy={140 + depth * s}
+                              cy={sectionTop + depth * s}
                               r={stitchRadius}
                             />
                           );
@@ -420,7 +429,7 @@ export default function Drawing({
                       key={i}
                       data-family={line.family}
                       data-mark={line.mark}
-                      d={`M${sectionLeft + line.a.x * s} ${140 + line.a.y * s}L${sectionLeft + line.b.x * s} ${140 + line.b.y * s}`}
+                      d={`M${sectionLeft + line.a.x * s} ${sectionTop + line.a.y * s}L${sectionLeft + line.b.x * s} ${sectionTop + line.b.y * s}`}
                       fill="none"
                       strokeWidth={line.diameter * s}
                     >
@@ -443,21 +452,21 @@ export default function Drawing({
                     inválidas
                   </title>
                   <path
-                    d={`M${sectionLeft - 40} 140V${sectionCentroid}`}
+                    d={`M${sectionLeft - 40} ${sectionTop}V${sectionCentroid}`}
                     fill="none"
                   />
                   <path
-                    d={`M${sectionLeft - 44} 144l8 -8 M${sectionLeft - 44} ${sectionCentroid + 4}l8 -8`}
+                    d={`M${sectionLeft - 44} ${sectionTop + 4}l8 -8 M${sectionLeft - 44} ${sectionCentroid + 4}l8 -8`}
                     fill="none"
                   />
                   <g className="dimension-extension" fill="none">
                     <path
-                      d={`M${sectionLeft} 140H${sectionLeft - 48} M${sectionLeft} ${sectionCentroid}H${sectionLeft - 48}`}
+                      d={`M${sectionLeft} ${sectionTop}H${sectionLeft - 48} M${sectionLeft} ${sectionCentroid}H${sectionLeft - 48}`}
                     />
                   </g>
                   <text
                     x={sectionLeft - 54}
-                    y={(140 + sectionCentroid) / 2}
+                    y={(sectionTop + sectionCentroid) / 2}
                     textAnchor="end"
                     dominantBaseline="middle"
                   >
@@ -480,23 +489,23 @@ export default function Drawing({
                 >
                   <title>Altura do concreto na estação do 1º estribo</title>
                   <path
-                    d={`M${440 + (g.width * s) / 2} 140V${140 + sectionHeight * s}`}
+                    d={`M${440 + (g.width * s) / 2} ${sectionTop}V${sectionTop + sectionHeight * s}`}
                     fill="none"
                   />
                   <path
-                    d={`M${436 + (g.width * s) / 2} 144l8 -8 M${436 + (g.width * s) / 2} ${140 + sectionHeight * s + 4}l8 -8`}
+                    d={`M${436 + (g.width * s) / 2} ${sectionTop + 4}l8 -8 M${436 + (g.width * s) / 2} ${sectionTop + sectionHeight * s + 4}l8 -8`}
                     fill="none"
                   />
                   <g className="dimension-extension" fill="none">
                     <path
-                      d={`M${400 + (g.width * s) / 2} 140H${448 + (g.width * s) / 2} M${400 + (g.width * s) / 2} ${140 + sectionHeight * s}H${448 + (g.width * s) / 2}`}
+                      d={`M${400 + (g.width * s) / 2} ${sectionTop}H${448 + (g.width * s) / 2} M${400 + (g.width * s) / 2} ${sectionTop + sectionHeight * s}H${448 + (g.width * s) / 2}`}
                     />
                   </g>
                   <text
                     x={444 + (g.width * s) / 2}
-                    y={(280 + sectionHeight * s) / 2}
+                    y={(2 * sectionTop + sectionHeight * s) / 2}
                     textAnchor="middle"
-                    transform={`rotate(-90 ${444 + (g.width * s) / 2} ${(280 + sectionHeight * s) / 2})`}
+                    transform={`rotate(-90 ${444 + (g.width * s) / 2} ${(2 * sectionTop + sectionHeight * s) / 2})`}
                   >
                     {`h = ${number(sectionHeight / 10, 1)}`}
                   </text>
@@ -506,7 +515,7 @@ export default function Drawing({
             {rebar && lowerStitchMissing && (
               <text
                 x={400}
-                y={155 + g.height * s}
+                y={sectionTop + 15 + sectionBottom * s}
                 textAnchor="middle"
                 className="dimension-text"
                 fill="var(--danger)"
@@ -517,7 +526,16 @@ export default function Drawing({
             <text
               className="drawing-caption"
               x="400"
-              y={Math.min(555, 170 + sectionHeight * s)}
+              y={Math.min(
+                555,
+                sectionTop +
+                  30 +
+                  Math.max(
+                    sectionHeight,
+                    ...sectionRebar.lines.map((line) => line.b.y),
+                  ) *
+                    s,
+              )}
               textAnchor="middle"
             >
               {`SEÇÃO A–A · 1º ESTRIBO · x = ${number(sectionX / 10, 2)} cm`}

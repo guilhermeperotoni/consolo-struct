@@ -123,5 +123,19 @@ test("pinos no plano A–A aparecem com suas posições transversais", async ({
   await expect(
     page.locator('.steel-detail-families [data-family="welded"]'),
   ).toHaveCount(0);
+  const dimension = (await page
+    .getByRole("button", { name: /^Editar b =/ })
+    .boundingBox())!;
+  for (const pin of await page
+    .locator('.steel-detail-families [data-family="pin"]')
+    .all()) {
+    const box = (await pin.boundingBox())!;
+    expect(box.y).toBeGreaterThan(dimension.y + dimension.height);
+  }
   await page.screenshot({ path: info.outputPath("pinos-no-corte.png") });
+  await view(page, "Detalhamento");
+  await expect(page.locator(".detail-canvas")).toContainText("PINO");
+  await page.screenshot({
+    path: info.outputPath("pinos-no-corte-detalhamento.png"),
+  });
 });

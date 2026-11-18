@@ -260,7 +260,9 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     H = g.height / 10,
     B = g.width / 10;
   const x = P + 15,
-    y = 52,
+    y =
+      52 +
+      (d.bars.some((bar) => bar.family === "pin") ? s.pinProjection / 10 : 0),
     sectionX = x + L + 46;
   const viewRight = sectionX + B + 50;
   const tableX = viewRight + 10,
@@ -437,14 +439,19 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   const sectionH = cut
     ? bottomDepth(concrete, cutDepth) / 10
     : H - (slope * cutDepth) / 10;
-  text(sectionX, y - 8, `CORTE A-A / x=${cm(cutDepth)} cm`, 2.8);
+  const sectionRebar = sectionBars(p, d, cutDepth);
+  const cutHeadroom = Math.max(
+    0,
+    ...sectionRebar.lines.map((bar) => -bar.a.y / 10),
+  );
+  text(sectionX, y - cutHeadroom - 8, `CORTE A-A / x=${cm(cutDepth)} cm`, 2.8);
   rect(sectionX, y, B, sectionH);
   const sectionPair = transverseGeometry(p, cutDepth);
   const innerSection = sectionPair.sections.find((section) => section.internal);
   if (innerSection)
     text(
       sectionX,
-      y - 4,
+      y - cutHeadroom - 4,
       `N3G projetado de x=${cm(innerSection.x)} cm; N4 no plano de cada ramo`,
       1.8,
     );
@@ -468,7 +475,6 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       radius: constructive.diameter / 20,
       layer: "ARMADURAS",
     });
-  const sectionRebar = sectionBars(p, d, cutDepth);
   for (const bar of [...sectionRebar.ties, ...sectionRebar.positives])
     entities.push({
       type: "circle",
