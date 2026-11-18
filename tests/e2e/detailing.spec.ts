@@ -115,3 +115,58 @@ test("pan e zoom, tema escuro e campo inválido bloqueando exportação", async 
   await page.getByRole("button", { name: "Detalhes DXF", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("campo inválido");
 });
+
+test("alternância de escopo, troca de peça, pan com soltura e exportações SVG/PDF permanecem equivalentes (#54)", async ({
+  page,
+}) => {
+  const canvas = page.locator(".detail-canvas"),
+    model = page.getByTestId("detail-model");
+  await expect(canvas).toBeVisible();
+
+  let event = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Detalhes SVG", exact: true }).click();
+  let download = await event;
+  const svgOne = await readFile((await download.path())!, "utf8");
+  expect(svgOne).toContain("<svg");
+  expect(svgOne).toContain("C01");
+
+  await page.getByLabel("Escopo dos detalhes").selectOption("all");
+  await page.getByLabel("Peça do detalhamento").selectOption("double-tie");
+  await expect(canvas).toContainText("C02");
+  await page.getByLabel("Escopo dos detalhes").selectOption("one");
+  await page.getByLabel("Peça do detalhamento").selectOption({ index: 0 });
+  await expect(canvas).toContainText("C01");
+
+  const box = (await canvas.boundingBox())!;
+  const before = await model.getAttribute("transform");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down({ button: "left" });
+  await page.mouse.move(
+    box.x + box.width / 2 + 40,
+    box.y + box.height / 2 + 30,
+    {
+      steps: 4,
+    },
+  );
+  await page.mouse.up({ button: "left" });
+  expect(await model.getAttribute("transform")).not.toBe(before);
+
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "C01 · Elevação", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  await page
+    .locator(".document-tabs")
+    .getByRole("button", { name: "Memória", exact: true })
+    .click();
+  await expect(page.locator(".report-paper")).toContainText("C01");
+  event = page.waitForEvent("download");
+  await page
+    .locator(".report-selection")
+    .getByRole("button", { name: "Baixar PDF", exact: true })
+    .click();
+  download = await event;
+  const pdf = await readFile((await download.path())!);
+  expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+});

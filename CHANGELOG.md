@@ -4,6 +4,8 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra e revisa o PR #59: suspende atualizações das abas ocultas Detalhamento/Memória, recebendo dados e ações atuais ao reabrir; envia apenas a peça selecionada ao worker no escopo individual e evita alocações repetidas na visibilidade do desenho. Preserva a comparação superficial nas abas visíveis. O pan aplica a posição final da soltura e termina ao trocar peça/escopo/aba, reenquadrar, redimensionar, perder foco/captura ou cancelar. Exportações e motor preservados. Validação e limites em [docs/VALIDACAO-REVISAO-PR59.md](docs/VALIDACAO-REVISAO-PR59.md); a investigação de fluidez Tauri/Linux da #54 permanece aberta.
+
 - Integra e revisa o PR #58: elevação e seção A–A compartilham as barras efetivas do detalhamento, incluindo curvas de N1/P1, ganchos de suporte, penetração e alcance de N2/N2I e ligações no plano do corte. Alças descartadas não reaparecem nas vistas. Mantém a folga gráfica N2/N3, d’ do cálculo, quantitativos e esquema dos projetos; os desenhos de detalhamento e suas exportações recebem as mesmas correções.
 
 - Complementa a revisão do PR #57: detecta penetração real nas dobras de N3/N3G, propaga os erros de todas as estações à seção A–A, usa a posição real quando existe um único estribo e não desenha nem quantifica N3G/N4 internas sem as N1 centrais necessárias. Mantém entradas e resultados do cálculo resistente.

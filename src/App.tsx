@@ -1128,6 +1128,7 @@ export default function App() {
                   result={result}
                   stale={stale}
                   saving={saving}
+                  active={page === "report"}
                   select={setSelected}
                   calculate={runCalculation}
                   exportPdf={() => void exportData("pdf")}
