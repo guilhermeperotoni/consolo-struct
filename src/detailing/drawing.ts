@@ -8,7 +8,6 @@ import {
   type Segment,
 } from "./geometry";
 import { type Bar, type Detail } from "./model";
-import { pinCenters } from "./model";
 import { reactionGeometry, stirrupLayout } from "../domain/theory";
 import { elevationTieBars, sectionBars } from "./projection";
 import { projectElevation, projectPlan, type ViewItem } from "./rebarModel";
@@ -587,8 +586,11 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   // B–B at the load axis: same cut as A–A (loops, beam bars and P1 included,
   // stitches only where they still reach x, pins in their own plane).
   drawSection(sectionBars(p, d, g.loadOffset), sectionX, planY);
-  if (s.pins) {
-    const centers = pinCenters(p).map((v) => v / 10);
+  // Pin dimensions refer to the placed pins (planes y = centre of each pin).
+  const centers = d.bars
+    .filter((bar) => bar.family === "pin")
+    .flatMap((bar) => bar.instances.map((pin) => pin.parts[0].at / 10));
+  if (centers.length) {
     if (centers.length > 1)
       dim(
         sectionX + centers[0],

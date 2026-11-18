@@ -12,7 +12,7 @@ import {
   steelOptionLabel,
 } from "../domain/steel";
 import { memo, useId, useMemo } from "react";
-import { transverseGeometry } from "../detailing/transverse";
+import { rebarModel } from "../detailing/rebarModel";
 import {
   ChevronDown,
   SlidersHorizontal,
@@ -53,7 +53,13 @@ function Inspector({
   const steelId = useId();
   const secondarySteelId = useId();
   const steel = tieSteelClassOf(p.materials.fyk);
-  const n4Count = useMemo(() => transverseGeometry(p).positions.length, [p]);
+  // N4 bars as placed by the single reinforcement source.
+  const n4Count = useMemo(
+    () =>
+      rebarModel(p).bars.find((bar) => bar.family === "constructive")
+        ?.quantity ?? 0,
+    [p],
+  );
   const tabs = [
     { id: "geometry", label: "Geometria", icon: Ruler },
     { id: "loads", label: "Ações", icon: ArrowDownToLine },

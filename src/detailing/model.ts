@@ -19,6 +19,7 @@ import {
   steelMass,
   samplePath,
   pathSamplingError,
+  pathLength,
   type BarPath,
 } from "./geometry";
 import { beamArrangementActive, beamLayout, beamBarPositions } from "./beam";
@@ -704,14 +705,14 @@ export function buildRebarGeometry(
       // out of plane. The placed bar is the perimeter with the outer 90° part
       // of the closing corner, so cuts do not count the tails as extra legs.
       const closing = path.segments.at(-2)!;
+      const perimeter = [
+        ...path.segments.slice(2, -2),
+        closing.type === "arc" ? { ...closing, sweep: -Math.PI / 2 } : closing,
+      ];
       const outline: BarPath = {
         ...path,
-        segments: [
-          ...path.segments.slice(2, -2),
-          closing.type === "arc"
-            ? { ...closing, sweep: -Math.PI / 2 }
-            : closing,
-        ],
+        segments: perimeter,
+        length: pathLength(perimeter),
       };
       const hookTail = Math.max(5 * r.stitchDiameter, 50);
       add({
