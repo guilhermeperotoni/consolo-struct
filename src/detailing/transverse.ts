@@ -9,9 +9,8 @@ import {
   roundedPath,
   samplePath,
   type BarPath,
-  type Point,
-  type Segment,
 } from "./geometry";
+import { translatePath } from "./rebarPlacement";
 
 type Point3 = [number, number, number];
 /** Minimum distance of two centre-line segments, including crossings between samples. */
@@ -58,18 +57,7 @@ export function pathsClash(first: Point3[], second: Point3[], minimum: number) {
 
 /** One physical source for N3/N4, in mm. Cross sections use (width, depth);
  * longitudinal bars use (length from support, depth). No resistance from N4. */
-export function translatePath(path: BarPath, x: number, y: number): BarPath {
-  const move = (p: Point) => ({ x: p.x + x, y: p.y + y });
-  return {
-    ...path,
-    segments: path.segments.map(
-      (s): Segment =>
-        s.type === "line"
-          ? { ...s, a: move(s.a), b: move(s.b) }
-          : { ...s, center: move(s.center) },
-    ),
-  };
-}
+export { translatePath };
 
 /** All intersections with a section x, including arcs; no assumed straight chord. */
 export function sectionDepths(path: BarPath, x: number): number[] {
@@ -139,7 +127,11 @@ export function firstLayerTiePositions(p: Piece): number[] {
   return beamBarPositions(p, firstRow.count, r.tieDiameter);
 }
 
-export function transverseGeometry(p: Piece, sectionX?: number) {
+export function transverseGeometry(
+  p: Piece,
+  sectionX?: number,
+  placedTiePositions?: number[],
+) {
   const g = p.geometry,
     r = p.rebar;
   const branches = r.stirrupBranches ?? 2,
@@ -157,7 +149,8 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
     g.cover + r.stirrupDiameter + diameter / 2 + radius * (1 - Math.SQRT1_2);
   const innerCornerOffset =
     r.stirrupDiameter / 2 + diameter / 2 + radius * (1 - Math.SQRT1_2);
-  const tiePositions = branches === 4 ? firstLayerTiePositions(p) : [];
+  const tiePositions =
+    branches === 4 ? (placedTiePositions ?? firstLayerTiePositions(p)) : [];
   const hasCentralTies = tiePositions.length >= 4;
   let innerLeft = 0,
     innerRight = 0;
@@ -189,6 +182,7 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
       bottomOffsetDepth(concrete, x, layout.offset) - layout.offset;
     const outer = {
       x,
+      pairedWith: undefined,
       internal: false,
       width,
       height,
@@ -206,6 +200,7 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
     const path = closedStirrup(w, innerHeight, r.stirrupDiameter, mandrel);
     const inner = {
       x: innerX,
+      pairedWith: x,
       internal: true,
       width: w,
       height: innerHeight,
@@ -288,10 +283,9 @@ export function transverseGeometry(p: Piece, sectionX?: number) {
   };
 }
 
-export function constructiveGeometry(p: Piece) {
+export function constructiveGeometry(p: Piece, t = transverseGeometry(p)) {
   const g = p.geometry,
-    r = p.rebar,
-    t = transverseGeometry(p);
+    r = p.rebar;
   const concrete = concreteProfile(p),
     diameter = t.diameter;
   const nominalMandrel = mandrelDiameter(diameter, p.materials.fykTransverse);

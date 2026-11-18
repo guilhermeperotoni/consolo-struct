@@ -121,6 +121,17 @@ export function closedStirrup(
       height >= 2 * r + tail / Math.sqrt(2),
   };
 }
+/** Perimeter used by the conventional transverse section of N2/N2I. The
+ * full fabrication projection includes both overlapping closure ends. */
+export function closedStirrupPerimeter(path: BarPath): BarPath {
+  const closing = path.segments.at(-2)!;
+  const segments = [
+    ...path.segments.slice(2, -2),
+    closing.type === "arc" ? { ...closing, sweep: -Math.PI / 2 } : closing,
+  ];
+  return { ...path, segments, length: pathLength(segments) };
+}
+
 /** Internal U for N3: two vertical effective legs and two inward 135° hooks.
  * Explicit arcs keep the full straight tails instead of consuming them in fillets. */
 export function openStirrup(

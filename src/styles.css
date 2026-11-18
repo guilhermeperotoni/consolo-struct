@@ -188,7 +188,7 @@
   justify-content: space-between;
   gap: 6px;
 }
-.detail-totals span:last-child {
+.detail-totals strong ~ span {
   width: 100%;
   color: var(--muted);
   font-size: 11px;

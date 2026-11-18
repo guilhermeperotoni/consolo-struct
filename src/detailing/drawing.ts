@@ -1,24 +1,17 @@
-import {
-  constructiveGeometry,
-  transverseGeometry,
-  translatePath,
-  sectionDepths,
-  projectedConstructiveSection,
-} from "./transverse";
 import type { Project } from "../domain/model";
 import { number } from "../domain/model";
 import {
   mandrelDiameter,
   samplePath,
+  steelMass,
   type BarPath,
   type Point,
   type Segment,
 } from "./geometry";
 import { type Bar, type Detail } from "./model";
-import { pinCenters } from "./model";
-import { beamBarPositions } from "./beam";
 import { reactionGeometry, stirrupLayout } from "../domain/theory";
 import { elevationTieBars, sectionBars } from "./projection";
+import { projectElevation, projectPlan, type ViewItem } from "./rebarModel";
 import { bottomDepth, concreteProfile } from "../domain/profile";
 import { coefficientText, materialSafety } from "../domain/materialSafety";
 import {
@@ -44,6 +37,7 @@ export type Entity =
       start: number;
       sweep: number;
       layer: Layer;
+      dash?: boolean;
     }
   | { type: "circle"; center: Point; radius: number; layer: Layer }
   | {
@@ -161,7 +155,13 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       true,
       dash,
     );
-  const barPath = (path: BarPath, x: number, y: number, scale = 0.1) => {
+  const barPath = (
+    path: BarPath,
+    x: number,
+    y: number,
+    scale = 0.1,
+    dash = false,
+  ) => {
     for (const seg of path.segments) {
       if (seg.type === "line")
         line(
@@ -170,6 +170,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
           x + seg.b.x * scale,
           y + seg.b.y * scale,
           "ARMADURAS",
+          dash,
         );
       else
         entities.push({
@@ -177,6 +178,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
           center: { x: x + seg.center.x * scale, y: y + seg.center.y * scale },
           radius: seg.radius * scale,
           layer: "ARMADURAS",
+          ...(dash ? { dash } : {}),
         });
     }
   };
@@ -268,6 +270,21 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   const tableX = viewRight + 10,
     tableW = 205;
   const width = Math.max(540, tableX + tableW + 12);
+  const countBars = (family: Bar["family"]) =>
+    d.bars
+      .filter((bar) => bar.family === family)
+      .reduce((sum, bar) => sum + bar.quantity, 0);
+  const detailedTieCount = d.tieRows.reduce(
+    (sum, row) => sum + row.detailedCount,
+    0,
+  );
+  const detailedTieLayers = d.tieRows.filter(
+    (row) => row.detailedCount > 0,
+  ).length;
+  const missingTieLegs = detailedTieCount !== r.tieCount;
+  const outerCount = countBars("stirrup");
+  const innerCount = countBars("stirrupInner");
+  const constructiveCount = countBars("constructive");
   text(10, 8, `${p.name}  |  DETALHAMENTO DO CONSOLO`, 3.5);
   text(
     width - 10,
@@ -288,7 +305,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   text(
     10,
     26,
-    `Tirante: ${r.tieCount} ramos em ${q.tieLayers} camada(s)${q.tieLayers === 2 ? " · TIRANTE DUPLO" : ""} · V${q.forceMode === "design" ? "d" : "k"}=${number(p.loads.vertical / 1000, 1)} kN · H${q.forceMode === "design" ? "d" : "k"}=${number(p.loads.horizontal / 1000, 1)} kN · a_calc=${cm(reactionGeometry(p).a)} cm`,
+    `Tirante: ${detailedTieCount} ramos detalhados em ${detailedTieLayers} camada(s)${detailedTieLayers === 2 ? " · TIRANTE DUPLO" : ""}${missingTieLegs ? ` (${r.tieCount} informados)` : ""} · V${q.forceMode === "design" ? "d" : "k"}=${number(p.loads.vertical / 1000, 1)} kN · H${q.forceMode === "design" ? "d" : "k"}=${number(p.loads.horizontal / 1000, 1)} kN · a_calc=${cm(reactionGeometry(p).a)} cm`,
     2.3,
   );
   text(
@@ -342,56 +359,48 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     .map((angle) => `${number(angle, 1)}°`)
     .join(" / ");
   const beam = d.arrangement === "beam";
-  const projectedTies = elevationTieBars(p, d);
-  for (const b of d.bars) {
-    if (b.family === "positive") barPath(b.path, x, y);
-    if (b.family === "tie")
-      for (const projected of projectedTies.filter((item) => item.bar === b))
-        barPath(projected.path, x, y);
-    if (b.family === "welded")
-      for (const loc of b.locations)
+  // Every view below is a projection or a cut of the same placed bars.
+  const drawShapes = (
+    items: ViewItem[],
+    ox: number,
+    oy: number,
+    dashed: (bar: Bar) => boolean = () => false,
+  ) => {
+    const drawn = new Set<string>();
+    for (const { bar, shape } of items) {
+      // Coincident projections of bars of one position are drawn once.
+      const key = `${bar.mark}|${JSON.stringify(shape)}`;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      if (shape.kind === "point")
         entities.push({
           type: "circle",
-          center: { x: x + loc.x / 10, y: y + loc.z / 10 },
-          radius: b.diameter / 20,
+          center: { x: ox + shape.center.x / 10, y: oy + shape.center.y / 10 },
+          radius: bar.diameter / 20,
           layer: "ARMADURAS",
         });
-    if (b.family === "stitch" || b.family === "lower")
-      for (const loc of b.locations)
-        line(
-          x - s.stitchEmbedment / 10,
-          y + loc.z / 10,
-          x + loc.x / 10,
-          y + loc.z / 10,
-          "ARMADURAS",
-        );
-    if (b.family === "stirrup" || b.family === "stirrupInner")
-      for (const loc of b.locations)
-        line(
-          x + loc.x / 10,
-          y + loc.z / 10,
-          x + loc.x / 10,
-          y + (loc.z + b.height) / 10,
-          "ARMADURAS",
-        );
-    if (b.family === "constructive") barPath(b.path, x, y);
-    if (b.family === "pin") {
-      line(
-        x + g.loadOffset / 10,
-        y - s.pinProjection / 10,
-        x + g.loadOffset / 10,
-        y + s.pinEmbedment / 10,
-        "ARMADURAS",
-      );
-      leader(
-        x + g.loadOffset / 10,
-        y - s.pinProjection / 10,
-        x + L + 4,
-        y - 10,
-        `${b.quantity} ${b.mark} (pinos)`,
-      );
+      else barPath(shape.path, ox, oy, 0.1, dashed(bar));
     }
-  }
+  };
+  const projectedTies = elevationTieBars(p, d);
+  for (const projected of projectedTies) barPath(projected.path, x, y);
+  const elevation = projectElevation(d);
+  drawShapes(
+    elevation.filter(({ bar }) => bar.family !== "tie"),
+    x,
+    y,
+  );
+  const pin = elevation.find(({ bar }) => bar.family === "pin");
+  const pinTop =
+    pin?.shape.kind === "path" ? pin.shape.path.segments[0] : undefined;
+  if (pin && pinTop?.type === "line")
+    leader(
+      x + pinTop.a.x / 10,
+      y + pinTop.a.y / 10,
+      x + L + 4,
+      y - 10,
+      `${pin.bar.quantity} ${pin.bar.mark} (pinos)`,
+    );
   dim(x - P, y, x, y, -10, `P=${cm(g.columnWidth)}`);
   dim(x, y, x + L, y, -10, `L=${cm(g.length)}`);
   dim(x, y, x + g.loadOffset / 10, y, -19, `a=${cm(g.loadOffset)}`);
@@ -405,7 +414,6 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     (b) => b.family === "stirrup" || b.family === "stirrupInner",
   );
   const constructiveBars = d.bars.filter((b) => b.family === "constructive");
-  const constructive = constructiveGeometry(p);
   const positiveBars = d.bars.filter((b) => b.family === "positive");
   const marks = (bs: Bar[]) =>
     bs.length
@@ -424,7 +432,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   text(
     x - P,
     y + H + 29,
-    `Costura ${marks(stitchBars)} · N3: ${r.stirrupBranches ?? 2} ramos/posição (${marks(verticalBars)}) · Construtiva ${marks(constructiveBars)}${positiveBars.length ? ` · Positiva ${marks(positiveBars)}` : ""}`,
+    `Costura ${marks(stitchBars)} · Estribos ${marks(verticalBars)} · Construtiva ${marks(constructiveBars)}${positiveBars.length ? ` · Positiva ${marks(positiveBars)}` : ""}`,
     2.2,
   );
   if (beam)
@@ -439,15 +447,55 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   const sectionH = cut
     ? bottomDepth(concrete, cutDepth) / 10
     : H - (slope * cutDepth) / 10;
-  const sectionRebar = sectionBars(p, d, cutDepth);
+  // Both transverse cuts draw exactly the bars that meet their plane.
+  const drawSection = (
+    section: ReturnType<typeof sectionBars>,
+    ox: number,
+    oy: number,
+  ) => {
+    for (const bar of section.stirrups) barPath(bar.path, ox, oy);
+    for (const bar of [
+      ...section.constructive,
+      ...section.ties,
+      ...section.positives,
+    ])
+      entities.push({
+        type: "circle",
+        center: { x: ox + bar.v / 10, y: oy + bar.depth / 10 },
+        radius: bar.diameter / 20,
+        layer: "ARMADURAS",
+      });
+    for (const bar of section.stitches)
+      for (const v of bar.positions)
+        entities.push({
+          type: "circle",
+          center: { x: ox + v / 10, y: oy + bar.depth / 10 },
+          radius: bar.diameter / 20,
+          layer: "ARMADURAS",
+        });
+    for (const bar of section.lines)
+      line(
+        ox + bar.a.x / 10,
+        oy + bar.a.y / 10,
+        ox + bar.b.x / 10,
+        oy + bar.b.y / 10,
+        "ARMADURAS",
+      );
+  };
+  // A–A at the first stirrup: the juxtaposed N3/N3G pair is projected and
+  // each N4 is cut in the plane of the stirrup that carries it.
+  const sectionRebar = sectionBars(p, d, cutDepth, {
+    pairWindow: r.stirrupDiameter,
+  });
   const cutHeadroom = Math.max(
     0,
     ...sectionRebar.lines.map((bar) => -bar.a.y / 10),
   );
   text(sectionX, y - cutHeadroom - 8, `CORTE A-A / x=${cm(cutDepth)} cm`, 2.8);
   rect(sectionX, y, B, sectionH);
-  const sectionPair = transverseGeometry(p, cutDepth);
-  const innerSection = sectionPair.sections.find((section) => section.internal);
+  const innerSection = sectionRebar.stirrups.find(
+    (bar) => bar.family === "stirrupInner",
+  );
   if (innerSection)
     text(
       sectionX,
@@ -455,54 +503,12 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       `N3G projetado de x=${cm(innerSection.x)} cm; N4 no plano de cada ramo`,
       1.8,
     );
-  for (const section of sectionPair.sections)
-    barPath(
-      translatePath(
-        section.path,
-        section.offset,
-        g.cover + r.stirrupDiameter / 2,
-      ),
-      sectionX,
-      y,
-    );
-  for (const { v, depth } of projectedConstructiveSection(
-    constructive,
-    sectionPair.sections,
-  ))
-    entities.push({
-      type: "circle",
-      center: { x: sectionX + v / 10, y: y + depth / 10 },
-      radius: constructive.diameter / 20,
-      layer: "ARMADURAS",
-    });
-  for (const bar of [...sectionRebar.ties, ...sectionRebar.positives])
-    entities.push({
-      type: "circle",
-      center: { x: sectionX + bar.v / 10, y: y + bar.depth / 10 },
-      radius: bar.diameter / 20,
-      layer: "ARMADURAS",
-    });
-  for (const bar of sectionRebar.stitches)
-    for (const v of bar.positions)
-      entities.push({
-        type: "circle",
-        center: { x: sectionX + v / 10, y: y + bar.depth / 10 },
-        radius: bar.diameter / 20,
-        layer: "ARMADURAS",
-      });
-  for (const bar of sectionRebar.lines)
-    line(
-      sectionX + bar.a.x / 10,
-      y + bar.a.y / 10,
-      sectionX + bar.b.x / 10,
-      y + bar.b.y / 10,
-      "ARMADURAS",
-    );
+  drawSection(sectionRebar, sectionX, y);
   dim(sectionX, y + H, sectionX + B, y + H, 8, `b=${cm(g.width)}`);
   text(
     sectionX,
     y + H + 18,
-    `${r.tieCount} ramos Ø${number(r.tieDiameter, 1)} / ${q.tieLayers} camada(s)`,
+    `Tirante detalhado: ${detailedTieCount} ramos Ø${number(r.tieDiameter, 1)} / ${detailedTieLayers} camada(s)`,
     2.1,
   );
   d.tieRows
@@ -511,7 +517,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       text(
         sectionX,
         y + H + 23 + i * 4,
-        `${i + 1}ª: ${row.count} ramos; eixo a ${cm(row.y)} do topo (${tieBars
+        `${i + 1}ª: ${row.detailedCount} ramos detalhados${row.detailedCount !== row.count ? ` de ${row.count} informados` : ""}; eixo a ${cm(row.y)} do topo (${tieBars
           .filter((b) => b.locations.some((loc) => loc.layer === i))
           .map((b) => b.mark)
           .join("/")})`,
@@ -531,29 +537,28 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     "EIXOS",
     true,
   );
+  const plan = projectPlan(d);
+  const belowTies = (bar: Bar) =>
+    bar.family === "stitch" ||
+    bar.family === "lower" ||
+    bar.family === "positive" ||
+    bar.family === "constructive" ||
+    bar.family === "stirrup" ||
+    bar.family === "stirrupInner";
+  // Put the dashed secondary steel behind the solid ties and connections.
+  drawShapes(
+    plan.filter(({ bar }) => belowTies(bar)),
+    x,
+    planY,
+    belowTies,
+  );
+  drawShapes(
+    plan.filter(({ bar }) => !belowTies(bar)),
+    x,
+    planY,
+  );
   for (const b of tieBars)
-    for (const loc of b.locations) {
-      const planOffset =
-        q.frontAnchor === "loop" && !beam
-          ? (B - b.width / 10) / 2
-          : (g.cover +
-              r.stirrupDiameter +
-              r.tieDiameter / 2 +
-              (loc.x *
-                (g.width - 2 * (g.cover + r.stirrupDiameter) - r.tieDiameter)) /
-                Math.max(b.quantity - 1, 1)) /
-            10;
-      if (beam) {
-        // In plan the vertical bends project onto the ends of the straight run.
-        const xs = samplePath(b.path).map((v) => v.x);
-        line(
-          x + Math.min(...xs) / 10,
-          planY + planOffset,
-          x + Math.max(...xs) / 10,
-          planY + planOffset,
-          "ARMADURAS",
-        );
-      } else barPath(b.path, x, planY + planOffset);
+    for (const loc of b.locations)
       if ((loc.layer ?? 0) > 0)
         leader(
           x + L * 0.7,
@@ -562,71 +567,12 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
           planY + B + 12 + (loc.layer ?? 0) * 5,
           `${b.mark} - ${loc.layer! + 1}ª camada`,
         );
-    }
-  for (const b of positiveBars) {
-    const xs = samplePath(b.path).map((v) => v.x);
-    for (const v of beamBarPositions(p, b.quantity, b.diameter))
-      line(
-        x + Math.min(...xs) / 10,
-        planY + v / 10,
-        x + Math.max(...xs) / 10,
-        planY + v / 10,
-        "ARMADURAS",
-        true,
-      );
-  }
-  for (const v of constructive.positions) {
-    const xs = samplePath(constructive.path).map((pt) => pt.x);
-    line(
-      x + Math.min(...xs) / 10,
-      planY + v / 10,
-      x + Math.max(...xs) / 10,
-      planY + v / 10,
-      "ARMADURAS",
-      true,
-    );
-  }
-  for (const section of transverseGeometry(p).sections)
-    line(
-      x + section.x / 10,
-      planY + section.offset / 10,
-      x + section.x / 10,
-      planY + (section.offset + section.width) / 10,
-      "ARMADURAS",
-      true,
-    );
-  for (const b of d.bars.filter((b) => b.family === "welded")) {
-    line(
-      x + b.locations[0].x / 10,
-      planY + g.cover / 10,
-      x + b.locations[0].x / 10,
-      planY + B - g.cover / 10,
-      "ARMADURAS",
-    );
-    entities.push({
-      type: "circle",
-      center: { x: x + b.locations[0].x / 10, y: y + b.locations[0].z / 10 },
-      radius: b.diameter / 20,
-      layer: "ARMADURAS",
-    });
-  }
   const cutX = x + cutDepth / 10;
   line(cutX, planY - 5, cutX, planY + B + 5, "EIXOS", true);
   text(cutX - 2, planY - 6, "A", 2.7);
   text(cutX - 2, planY + B + 10, "A", 2.7);
   dim(x, planY + B, x + L, planY + B, 8, cm(g.length));
   dim(x + L, planY, x + L, planY + B, 10, cm(g.width));
-  if (s.pins)
-    for (let i = 0; i < s.pins; i++)
-      entities.push({
-        type: "circle",
-        center: {
-          x: x + g.loadOffset / 10,
-          y: planY + pinCenters(p)[i] / 10,
-        },
-        radius: s.pinDiameter / 20,
-        layer: "ARMADURAS",
-      });
   text(
     x - P,
     planY + B + 23,
@@ -639,10 +585,11 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     `Costura penetra ${cm(s.stitchEmbedment)} cm no suporte. Cobrimento nominal ${cm(g.cover)} cm.`,
     2.2,
   );
-  const n3Pitch =
-    r.stirrupCount > 1
-      ? (g.length - 2 * g.cover - r.stirrupDiameter) / (r.stirrupCount - 1)
-      : 0;
+  text(x - P, planY + B + 33, "Armaduras secundárias em tracejado.", 2.2);
+  const outerStations = verticalBars
+    .filter((bar) => bar.family === "stirrup")
+    .flatMap((bar) => bar.locations.map((loc) => loc.x))
+    .sort((a, b) => a - b);
   const bearingH = cut
     ? bottomDepth(concrete, g.loadOffset) / 10
     : H - (slope * g.loadOffset) / 10;
@@ -659,72 +606,14 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     q.bearingWidth / 10,
     Math.max(q.bearingHeight / 10, 1),
   );
-  for (const b of tieBars) {
-    for (const loc of b.locations)
-      if (q.frontAnchor === "loop") {
-        const offset = (B - b.width / 10) / 2;
-        for (const yy of [offset, B - offset])
-          entities.push({
-            type: "circle",
-            center: { x: sectionX + yy, y: planY + loc.z / 10 },
-            radius: b.diameter / 20,
-            layer: "ARMADURAS",
-          });
-      } else
-        for (let i = 0; i < b.quantity; i++)
-          entities.push({
-            type: "circle",
-            center: {
-              x:
-                sectionX +
-                (g.cover +
-                  r.stirrupDiameter +
-                  r.tieDiameter / 2 +
-                  (i *
-                    (g.width -
-                      2 * (g.cover + r.stirrupDiameter) -
-                      r.tieDiameter)) /
-                    Math.max(b.quantity - 1, 1)) /
-                  10,
-              y: planY + loc.z / 10,
-            },
-            radius: b.diameter / 20,
-            layer: "ARMADURAS",
-          });
-  }
-  for (const b of stitchBars)
-    for (const loc of b.locations)
-      if (loc.x >= g.loadOffset) {
-        const offset = (g.cover + r.stirrupDiameter + b.diameter / 2) / 10;
-        for (const yy of [offset, B - offset])
-          entities.push({
-            type: "circle",
-            center: { x: sectionX + yy, y: planY + loc.z / 10 },
-            radius: b.diameter / 20,
-            layer: "ARMADURAS",
-          });
-      }
-  for (const v of constructive.positions)
-    for (const depth of sectionDepths(constructive.path, g.loadOffset))
-      entities.push({
-        type: "circle",
-        center: { x: sectionX + v / 10, y: planY + depth / 10 },
-        radius: constructive.diameter / 20,
-        layer: "ARMADURAS",
-      });
-  if (s.pins)
-    for (let i = 0; i < s.pins; i++) {
-      const py = pinCenters(p)[i] / 10;
-      line(
-        sectionX + py,
-        planY - s.pinProjection / 10,
-        sectionX + py,
-        planY + s.pinEmbedment / 10,
-        "ARMADURAS",
-      );
-    }
-  if (s.pins) {
-    const centers = pinCenters(p).map((v) => v / 10);
+  // B–B at the load axis: same cut as A–A (loops, beam bars and P1 included,
+  // stitches only where they still reach x, pins in their own plane).
+  drawSection(sectionBars(p, d, g.loadOffset), sectionX, planY);
+  // Pin dimensions refer to the placed pins (planes y = centre of each pin).
+  const centers = d.bars
+    .filter((bar) => bar.family === "pin")
+    .flatMap((bar) => bar.instances.map((pin) => pin.parts[0].at / 10));
+  if (centers.length) {
     if (centers.length > 1)
       dim(
         sectionX + centers[0],
@@ -760,27 +649,27 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   text(
     sectionX,
     infoY + 6,
-    `${r.stirrupCount} peças; primeiro/último eixo a ${cm(g.cover + r.stirrupDiameter / 2)} cm da face`,
+    `N3: ${outerCount} externos detalhados · N3G: ${innerCount} internos detalhados.`,
     2.1,
   );
   text(
     sectionX,
     infoY + 11,
-    n3Pitch
-      ? `Entre eixos: ${cm(n3Pitch)} cm; ver posições variáveis abaixo.`
-      : "Posição única no centro do comprimento.",
+    outerStations.length
+      ? `N3: primeiro eixo x=${cm(outerStations[0])} cm; último x=${cm(outerStations.at(-1)!)} cm.`
+      : "Nenhum eixo N3 detalhado.",
     2.1,
   );
   text(
     sectionX,
     infoY + 18,
-    `Costura superior: ${r.stitchCount} peças nos 2d/3 superiores.`,
+    `Costura superior: ${countBars("stitch")} barras nos 2d/3 superiores.`,
     2.1,
   );
   text(
     sectionX,
     infoY + 23,
-    `Costura inferior: ${q.lowerStitchCount} peças no trecho restante.`,
+    `Costura inferior: ${countBars("lower")} barras no trecho restante.`,
     2.1,
   );
   text(
@@ -832,13 +721,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       String(b.quantity * p.quantity),
       cm(b.cutLength),
       cm(b.cutLength * b.quantity * p.quantity),
-      number(
-        ((b.cutLength * Math.PI * b.diameter ** 2) / 4) *
-          7.85e-6 *
-          b.quantity *
-          p.quantity,
-        2,
-      ),
+      number(steelMass(b.cutLength, b.diameter) * b.quantity * p.quantity, 2),
     ]),
   ];
   let tableBottom = table(tableX, 49, [15, 16, 19, 20, 22, 35, 47, 31], rows);
@@ -864,14 +747,22 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     `Aço por peça: ${number(d.mass, 2)} kg · ${p.quantity} peças: ${number(d.totalMass, 2)} kg`,
     2.4,
   );
+  // Concrete consumption of the same piece outline used by the bars and by
+  // the quantities of the application and of the CSV (pieceVolume).
   text(
     tableX,
     tableBottom + 11,
+    `Concreto por peça: ${number(d.concreteVolume, 3)} m³ · ${p.quantity} peças: ${number(d.totalConcreteVolume, 3)} m³ · Taxa de aço: ${number(d.steelRate, 1)} kg/m³`,
+    2.4,
+  );
+  text(
+    tableX,
+    tableBottom + 16,
     "Massa teórica; sem perdas de corte, emendas ou acréscimo de compra.",
     2.05,
   );
   // Bar drawings laid out freely. All coordinates remain 1:1 in cm; no A-series sheet.
-  let bottom = Math.max(infoY + 43, tableBottom + 25);
+  let bottom = Math.max(infoY + 43, tableBottom + 30);
   text(10, bottom, "FORMAS DE DOBRAMENTO E POSIÇÕES", 3);
   text(
     10,
@@ -1023,7 +914,7 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
   text(10, bottom, "NOTAS DE DETALHAMENTO E CONFERÊNCIA", 2.8);
   const safety = materialSafety(q);
   const notes = [
-    `N3: ${r.stirrupBranches ?? 2} ramos efetivos por posição; ${r.stirrupBranches === 4 ? "estribo externo + estribo interno fechado" : "estribo externo"}. N4: ${r.stirrupBranches ?? 2} barras construtivas Ø${number(r.constructiveDiameter ?? 8, 1)} mm, sem contribuição resistente. N5 fendilhamento e N6 suspensão exigem detalhamento próprio.`,
+    `N3: ${outerCount} estribo(s) externo(s); N3G: ${innerCount} estribo(s) interno(s). N4: ${constructiveCount} barras construtivas Ø${number(r.constructiveDiameter ?? 8, 1)} mm, sem contribuição resistente. N5 fendilhamento e N6 suspensão exigem detalhamento próprio.`,
     `Responsável técnico: ${project.author || "não informado"}. Cliente: ${project.client || "não informado"}. Revisão ${s.revision || "R00"}.`,
     "Desenhos soltos: geometria e formas em centímetros; diâmetros das barras em milímetros. CAD em escala real 1:1; PDF em escala nominal 1:10 ao imprimir a 100%.",
     "Mandris e ganchos: NBR 6118:2026, 9.4.2.3, tabelas 9.1 e 9.2 e 9.4.6.1. Estribos representados pela projeção nominal com fechamento de ganchos fora do plano.",

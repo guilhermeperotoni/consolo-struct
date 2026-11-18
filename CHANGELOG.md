@@ -4,6 +4,8 @@ Este arquivo resume as mudanças documentadas no código-fonte recebido. Não pr
 
 ## Não lançado
 
+- Integra o PR #76 (issue #63). Elevação, cortes, 3D, prancha e quadro de aço passam a usar as mesmas formas e instâncias de armadura. A revisão recupera os ganchos nominais da costura no 3D e na planta, desenha trechos no plano do corte e identifica o par N3/N3G da estação. A prancha distingue ramos informados de ramos detalhados quando alguma alça é descartada. Volume de concreto e taxa de aço aparecem no Detalhamento e na Memória. O CSV geral acrescenta ramos detalhados, massa total de aço detalhado e taxa de aço. Mantém o motor ELU e o esquema 6.
+
 - Integra e revisa o PR #59: suspende atualizações das abas ocultas Detalhamento/Memória, recebendo dados e ações atuais ao reabrir; envia apenas a peça selecionada ao worker no escopo individual e evita alocações repetidas na visibilidade do desenho. Preserva a comparação superficial nas abas visíveis. O pan aplica a posição final da soltura e termina ao trocar peça/escopo/aba, reenquadrar, redimensionar, perder foco/captura ou cancelar. Exportações e motor preservados. Validação e limites em [docs/VALIDACAO-REVISAO-PR59.md](docs/VALIDACAO-REVISAO-PR59.md); a investigação de fluidez Tauri/Linux da #54 permanece aberta.
 
 - Integra e revisa o PR #58: elevação e seção A–A compartilham as barras efetivas do detalhamento, incluindo curvas de N1/P1, ganchos de suporte, penetração e alcance de N2/N2I e ligações no plano do corte. Alças descartadas não reaparecem nas vistas. Mantém a folga gráfica N2/N3, d’ do cálculo, quantitativos e esquema dos projetos; os desenhos de detalhamento e suas exportações recebem as mesmas correções.

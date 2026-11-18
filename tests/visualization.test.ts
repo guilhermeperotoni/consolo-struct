@@ -94,13 +94,31 @@ describe("Geometria técnica 3D", () => {
     const p = newPiece(1);
     p.rebar.tieCount = 6;
     p.design.tieLayers = 2;
+    p.design.frontAnchor = "welded";
     const m = buildSceneModel(p),
       ties = m.steel.filter((b) => b.id === "N1");
     expect(ties).toHaveLength(6);
     expect(ties.slice(0, 3).every((b) => b.points[0][2] === -41.3)).toBe(true);
     expect(ties.slice(3).every((b) => b.points[0][2] === -81.3)).toBe(true);
-    for (const path of m.steel.filter((b) => b.id === "N2"))
-      expect(path.points[0]).toEqual(path.points.at(-1));
+    // #63: loops are the detailed loops (one per pair of legs), not straight
+    // axes per leg; 3 legs per layer leave one loop per layer, as detailed.
+    p.design.frontAnchor = "loop";
+    const loops = buildSceneModel(p).steel.filter((b) => b.id === "N1");
+    const detailed = buildDetail(p).bars.filter((b) => b.family === "tie");
+    expect(loops).toHaveLength(
+      detailed.reduce((n, bar) => n + bar.quantity, 0),
+    );
+    expect(loops.map((b) => b.points[0][2])).toEqual([-41.3, -81.3]);
+    for (const path of m.steel.filter((b) => b.id === "N2")) {
+      const start = path.points[0];
+      const end = path.points.at(-1)!;
+      // The two 135° closing tails end one centre-line diameter apart in
+      // the nominal projection. A closed rectangle drops both tails.
+      expect(Math.hypot(start[0] - end[0], start[1] - end[1])).toBeCloseTo(
+        4 * path.diameter,
+        8,
+      );
+    }
   });
   it("gera materiais e grupos finitos nas duas opções de renderização", () => {
     const m = buildSceneModel(newPiece(1));

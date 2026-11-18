@@ -36,7 +36,7 @@ export function entitySvg(e: Entity): string {
       x: e.center.x + e.radius * Math.cos(e.start + e.sweep),
       y: e.center.y + e.radius * Math.sin(e.start + e.sweep),
     };
-    return `<path d="M${n(a.x)} ${n(a.y)} A${n(e.radius)} ${n(e.radius)} 0 ${Math.abs(e.sweep) > Math.PI ? 1 : 0} ${e.sweep > 0 ? 1 : 0} ${n(b.x)} ${n(b.y)}" ${common}/>`;
+    return `<path d="M${n(a.x)} ${n(a.y)} A${n(e.radius)} ${n(e.radius)} 0 ${Math.abs(e.sweep) > Math.PI ? 1 : 0} ${e.sweep > 0 ? 1 : 0} ${n(b.x)} ${n(b.y)}" ${common}${e.dash ? ' stroke-dasharray="2 1"' : ""}/>`;
   }
   if (e.type === "circle")
     return `<circle cx="${n(e.center.x)}" cy="${n(e.center.y)}" r="${n(e.radius)}" ${common}/>`;
@@ -140,8 +140,8 @@ export function drawingDxf(drawing: Drawing): string {
     pair(0, type);
     pair(100, "AcDbEntity");
     pair(8, e.layer);
+    if ((e.type === "line" || e.type === "arc") && e.dash) pair(6, "TRACEJADO");
     if (e.type === "line") {
-      if (e.dash) pair(6, "TRACEJADO");
       pair(100, "AcDbLine");
       pair(10, e.a.x);
       pair(20, -e.a.y);
@@ -242,14 +242,21 @@ export async function drawingPdf(drawings: Drawing[]): Promise<Uint8Array> {
       doc.setLineWidth(
         e.layer === "ARMADURAS" ? 0.4 : e.layer === "FORMAS" ? 0.25 : 0.13,
       );
-      doc.setLineDashPattern(e.type === "line" && e.dash ? [2, 1] : [], 0);
+      doc.setLineDashPattern(
+        (e.type === "line" || e.type === "arc") && e.dash ? [2, 1] : [],
+        0,
+      );
       if (e.type === "line") doc.line(e.a.x, e.a.y, e.b.x, e.b.y);
       if (e.type === "circle")
         doc.circle(e.center.x, e.center.y, e.radius, "S");
       if (e.type === "arc") {
         const pts = segmentPoints(e);
-        for (let i = 1; i < pts.length; i++)
-          doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y);
+        // One stroked path keeps the dash phase through successive chords.
+        doc.lines(
+          pts.slice(1).map((p, i) => [p.x - pts[i].x, p.y - pts[i].y]),
+          pts[0].x,
+          pts[0].y,
+        );
       }
       if (e.type === "text") {
         doc.setFont("helvetica", "normal");
