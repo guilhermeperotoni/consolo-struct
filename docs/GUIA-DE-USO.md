@@ -67,7 +67,9 @@ Para experimentar uma falha conhecida, no exemplo Curto-ELU reduza a ancoragem d
 - A árvore pode manter vários consolos expandidos. Expandir não troca a seleção. Clique em ×n para editar a quantidade.
 - Feche abas pelo × e reabra pelo navegador ou faixa de ferramentas. Fechar uma vista preserva o projeto.
 
-Na **Seção A–A** da modelagem, a cota **d’**, à esquerda, indica a distância do topo ao centroide de todas as barras do tirante, em centímetros com uma casa decimal. Com uma camada, termina no eixo das barras; com várias, usa o centroide ponderado pelas quantidades de cada camada, que pode ficar entre elas. O valor acompanha as entradas e o controle **Mostrar cotas**, mesmo com as armaduras ocultas. É uma cota de consulta, sem edição pelo desenho; as cotas **b** e **h** continuam editáveis.
+Na **Seção A–A** da modelagem, a cota **d’**, à esquerda, indica a distância do topo ao centroide de todas as barras do tirante, em centímetros com uma casa decimal. A referência é o centroide nominal usado no cálculo, ponderado pelas quantidades informadas em cada camada. Um corte que atravessa uma dobra pode mostrar os eixos em outra profundidade; alças que não cabem são omitidas do desenho e mantêm as pendências no detalhamento. A cota d’ não é recalculada a partir desses símbolos. O valor acompanha as entradas e o controle **Mostrar cotas**, mesmo com as armaduras ocultas. É uma cota de consulta, sem edição pelo desenho; as cotas **b** e **h** continuam editáveis.
+
+A elevação e a Seção A–A usam os percursos de N1, N2/N2I e P1 gerados no detalhamento. Confira os ganchos de suporte na elevação e as interseções reais das curvas no corte. Pinos e barras transversais soldadas aparecem no corte quando seu plano coincide com A–A. N3G e N4 conservam a projeção identificada de seus planos adjacentes.
 
 Consulte as [imagens e verificações da cota d’](VALIDACAO-SECAO-AA-DPRIME.md).
 

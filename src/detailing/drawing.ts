@@ -18,6 +18,7 @@ import { type Bar, type Detail } from "./model";
 import { pinCenters } from "./model";
 import { beamBarPositions } from "./beam";
 import { reactionGeometry, stirrupLayout } from "../domain/theory";
+import { elevationTieBars, sectionBars } from "./projection";
 import { bottomDepth, concreteProfile } from "../domain/profile";
 import { coefficientText, materialSafety } from "../domain/materialSafety";
 import {
@@ -339,45 +340,20 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
     .map((angle) => `${number(angle, 1)}°`)
     .join(" / ");
   const beam = d.arrangement === "beam";
+  const projectedTies = elevationTieBars(p, d);
   for (const b of d.bars) {
-    // Beam arrangement: bar paths are already in elevation coordinates (x, depth).
-    if (beam && (b.family === "tie" || b.family === "positive"))
-      barPath(b.path, x, y);
-    else if (b.family === "tie")
-      for (const loc of b.locations) {
-        const back =
-          q.supportAnchor === "hook"
-            ? s.supportHookProjection
-            : q.supportAnchorLength;
-        const hookR =
-          (mandrelDiameter(r.tieDiameter, p.materials.fyk) + r.tieDiameter) /
-          20;
-        line(
-          x - back / 10 + (q.supportAnchor === "hook" ? hookR : 0),
-          y + loc.z / 10,
-          x + (g.length - g.cover - r.tieDiameter / 2) / 10,
-          y + loc.z / 10,
-          "ARMADURAS",
-        );
-        if (q.supportAnchor === "hook") {
-          const rr = hookR;
-          entities.push({
-            type: "arc",
-            center: { x: x - back / 10 + rr, y: y + loc.z / 10 + rr },
-            radius: rr,
-            start: -Math.PI / 2,
-            sweep: -Math.PI / 2,
-            layer: "ARMADURAS",
-          });
-          line(
-            x - back / 10,
-            y + loc.z / 10 + rr,
-            x - back / 10,
-            y + loc.z / 10 + rr + s.supportHookTail / 10,
-            "ARMADURAS",
-          );
-        }
-      }
+    if (b.family === "positive") barPath(b.path, x, y);
+    if (b.family === "tie")
+      for (const projected of projectedTies.filter((item) => item.bar === b))
+        barPath(projected.path, x, y);
+    if (b.family === "welded")
+      for (const loc of b.locations)
+        entities.push({
+          type: "circle",
+          center: { x: x + loc.x / 10, y: y + loc.z / 10 },
+          radius: b.diameter / 20,
+          layer: "ARMADURAS",
+        });
     if (b.family === "stitch" || b.family === "lower")
       for (const loc of b.locations)
         line(
@@ -492,69 +468,30 @@ export function pieceDrawing(project: Project, d: Detail): Drawing {
       radius: constructive.diameter / 20,
       layer: "ARMADURAS",
     });
-  for (const b of positiveBars) {
-    // Depth of the sloped bottom chord at the section, inside the stirrup.
-    const depth =
-      g.height -
-      slope * cutDepth -
-      (g.cover + r.stirrupDiameter + b.diameter / 2) *
-        Math.sqrt(1 + slope ** 2);
-    for (const v of beamBarPositions(p, b.quantity, b.diameter))
+  const sectionRebar = sectionBars(p, d, cutDepth);
+  for (const bar of [...sectionRebar.ties, ...sectionRebar.positives])
+    entities.push({
+      type: "circle",
+      center: { x: sectionX + bar.v / 10, y: y + bar.depth / 10 },
+      radius: bar.diameter / 20,
+      layer: "ARMADURAS",
+    });
+  for (const bar of sectionRebar.stitches)
+    for (const v of bar.positions)
       entities.push({
         type: "circle",
-        center: { x: sectionX + v / 10, y: y + depth / 10 },
-        radius: b.diameter / 20,
+        center: { x: sectionX + v / 10, y: y + bar.depth / 10 },
+        radius: bar.diameter / 20,
         layer: "ARMADURAS",
       });
-  }
-  for (const b of tieBars) {
-    if (q.frontAnchor === "loop" && !beam)
-      for (const loc of b.locations) {
-        const inset = (B - b.width / 10) / 2;
-        for (const yy of [inset, B - inset])
-          entities.push({
-            type: "circle",
-            center: { x: sectionX + yy, y: y + loc.z / 10 },
-            radius: b.diameter / 20,
-            layer: "ARMADURAS",
-          });
-      }
-    else
-      for (let i = 0; i < b.quantity; i++)
-        entities.push({
-          type: "circle",
-          center: {
-            x:
-              sectionX +
-              (g.cover +
-                r.stirrupDiameter +
-                r.tieDiameter / 2 +
-                (b.quantity > 1
-                  ? (i *
-                      (g.width -
-                        2 * (g.cover + r.stirrupDiameter) -
-                        r.tieDiameter)) /
-                    (b.quantity - 1)
-                  : 0)) /
-                10,
-            y: y + b.locations[0].z / 10,
-          },
-          radius: b.diameter / 20,
-          layer: "ARMADURAS",
-        });
-  }
-  for (const b of stitchBars)
-    for (const loc of b.locations)
-      if (loc.x >= cutDepth) {
-        const offset = (g.cover + r.stirrupDiameter + b.diameter / 2) / 10;
-        for (const yy of [offset, B - offset])
-          entities.push({
-            type: "circle",
-            center: { x: sectionX + yy, y: y + loc.z / 10 },
-            radius: b.diameter / 20,
-            layer: "ARMADURAS",
-          });
-      }
+  for (const bar of sectionRebar.lines)
+    line(
+      sectionX + bar.a.x / 10,
+      y + bar.a.y / 10,
+      sectionX + bar.b.x / 10,
+      y + bar.b.y / 10,
+      "ARMADURAS",
+    );
   dim(sectionX, y + H, sectionX + B, y + H, 8, `b=${cm(g.width)}`);
   text(
     sectionX,

@@ -1,5 +1,6 @@
 import { transverseGeometry } from "../../src/detailing/transverse";
 import { buildDetail, lowerStitchLayout } from "../../src/detailing/model";
+import { sectionBars } from "../../src/detailing/projection";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { exampleProject, number, type Piece } from "../../src/domain/model";
@@ -448,8 +449,20 @@ async function expectSectionDPrime(page: Page, piece: Piece) {
     geometry.top + (layout.dPrime * geometry.height) / sectionHeight,
     4,
   );
-  expect(geometry.end.y).toBeCloseTo(geometry.centroid, 4);
-  expect(geometry.count).toBe(piece.rebar.tieCount);
+  const sec = sectionBars(
+    piece,
+    buildDetail(piece),
+    stirrupLayout(piece).positions[0],
+  );
+  const expectedCentroid =
+    sec.ties.reduce((sum, bar) => sum + bar.depth, 0) / sec.ties.length;
+  expect(geometry.centroid).toBeCloseTo(
+    geometry.top + (expectedCentroid * geometry.height) / sectionHeight,
+    4,
+  );
+  if (sec.ties.length === piece.rebar.tieCount)
+    expect(geometry.end.y).toBeCloseTo(geometry.centroid, 4);
+  expect(geometry.count).toBe(sec.ties.length);
 }
 
 test("seção A–A: d’ acompanha o centroide, cobrimento, bitolas e camadas desiguais", async ({
@@ -777,11 +790,11 @@ test("composição N2/N3 sinaliza projeção sem espaço sem deslocar níveis de
   const centers = await page
     .locator(".steel-N2 circle")
     .evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute("cy"))));
-  const layout = tieLayout(piece),
-    levels = [
-      ...upperStitchLayout(piece, layout).levels,
-      ...lowerStitchLayout(piece, layout).levels,
-    ];
+  const levels = sectionBars(
+    piece,
+    buildDetail(piece),
+    stirrupLayout(piece).positions[0],
+  ).stitches.map((s) => s.depth);
   const scale = Math.min(
     480 / (piece.geometry.columnWidth + piece.geometry.length),
     340 / (piece.geometry.height + 80),
