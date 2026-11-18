@@ -158,10 +158,23 @@ export function sectionBars(p: Piece, detail: Detail, sectionX: number) {
   }
   const stitches = detail.bars
     .filter((b) => b.family === "stitch" || b.family === "lower")
-    .flatMap((b) =>
-      b.locations.flatMap((loc) => {
+    .flatMap((b) => {
+      // closedStirrup depicts both 135° closing hooks out of plane for
+      // fabrication. Their overlapping tails are not additional cut legs.
+      // Keep the perimeter and the outer 90° part of the closing corner.
+      const closing = b.path.segments.at(-2)!;
+      const outline = {
+        ...b.path,
+        segments: [
+          ...b.path.segments.slice(2, -2),
+          closing.type === "arc"
+            ? { ...closing, sweep: -Math.PI / 2 }
+            : closing,
+        ],
+      };
+      return b.locations.flatMap((loc) => {
         const positions = sectionDepths(
-          b.path,
+          outline,
           sectionX + p.detailing.stitchEmbedment,
         ).map((v) => (g.width - b.height) / 2 + v);
         return positions.length
@@ -175,8 +188,8 @@ export function sectionBars(p: Piece, detail: Detail, sectionX: number) {
               },
             ]
           : [];
-      }),
-    );
+      });
+    });
   const positives = detail.bars
     .filter((b) => b.family === "positive")
     .flatMap((b) =>

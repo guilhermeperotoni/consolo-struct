@@ -74,6 +74,37 @@ describe("Projeções dos percursos físicos — revisão #58", () => {
     ).toEqual([]);
   });
 
+  it("não interpreta os ganchos de fechamento de N2/N2I como ramos adicionais", () => {
+    const p = newPiece(1),
+      d = buildDetail(p);
+    const stitches = sectionBars(p, d, 28.15).stitches;
+    expect(stitches.some((b) => b.mark.startsWith("N2I"))).toBe(true);
+    for (const bar of stitches) expect(bar.positions).toHaveLength(2);
+  });
+
+  it("preserva a curva do contorno N2 ao excluir pontas de fechamento fora do plano", () => {
+    const p = shortFixture(),
+      d = buildDetail(p);
+    const bar = d.bars.find((b) => b.family === "stitch")!;
+    const radius = (bar.mandrel + bar.diameter) / 2;
+    const front = bar.locations[0].x;
+    const inset = (p.geometry.width - bar.height) / 2;
+    const x = front - radius / 2;
+    const section = sectionBars(p, d, x).stitches.find(
+      (b) => b.mark === bar.mark,
+    )!;
+    const offset = radius - Math.sqrt(radius ** 2 - (radius / 2) ** 2);
+    expect(section.positions).toHaveLength(2);
+    expect(section.positions[0]).toBeCloseTo(inset + offset, 8);
+    expect(section.positions[1]).toBeCloseTo(
+      p.geometry.width - inset - offset,
+      8,
+    );
+    expect(
+      sectionBars(p, d, front + 1).stitches.some((b) => b.mark === bar.mark),
+    ).toBe(false);
+  });
+
   it("o corte exportado conserva as profundidades curvas de N1 e P1", () => {
     const p = shortBeam(),
       d = buildDetail(p);
